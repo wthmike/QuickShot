@@ -13,6 +13,7 @@ import { Photo, AppView, User } from './types';
 import { initDB, getAllPhotos, savePhoto, deletePhoto } from './services/storageService';
 import { CURRENT_USER } from './services/socialService';
 import { Loader2 } from 'lucide-react';
+import { Session, AuthChangeEvent } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'naturecam_photos';
 
@@ -22,7 +23,7 @@ const STORAGE_KEY = 'naturecam_photos';
 const DEV_MODE = false; 
 
 const App: React.FC = () => {
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | any | null>(null);
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [view, setView] = useState<AppView>(AppView.FEED);
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -38,8 +39,12 @@ const App: React.FC = () => {
         setSession({ 
             user: { 
                 id: CURRENT_USER.id, 
-                email: 'dev@hippocam.app' 
-            } 
+                email: 'dev@hippocam.app',
+                app_metadata: {},
+                user_metadata: {},
+                aud: 'authenticated',
+                created_at: new Date().toISOString()
+            } as any
         });
         // Set the mock profile directly
         setUserProfile(CURRENT_USER);
@@ -55,7 +60,7 @@ const App: React.FC = () => {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setSession(session);
     });
 
