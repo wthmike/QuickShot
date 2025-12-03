@@ -33,7 +33,7 @@ export const Feed: React.FC = () => {
         <span className="text-[10px] uppercase tracking-widest text-neutral-500">Live</span>
       </div>
 
-      <div className="flex flex-col gap-8 p-4">
+      <div className="flex flex-col w-full">
         {posts.map(post => (
           <FeedPoster key={post.id} post={post} isMe={post.userId === CURRENT_USER.id} />
         ))}
@@ -199,7 +199,7 @@ const FeedPoster: React.FC<{ post: Post, isMe: boolean }> = ({ post, isMe }) => 
   };
 
   return (
-    <div className="w-full bg-[#111] p-4 pb-6 relative overflow-hidden shadow-2xl">
+    <div className="w-full bg-[#050505] px-4 py-8 relative overflow-hidden border-b border-neutral-900/50">
       {/* Subtle Noise Texture Overlay */}
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }} />
 

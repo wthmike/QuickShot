@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabase';
 import { CameraView } from './components/Camera';
@@ -18,7 +17,7 @@ const STORAGE_KEY = 'naturecam_photos';
 
 // --- CONFIGURATION ---
 // Set to TRUE to use LocalStorage instead of Supabase for Authentication.
-const MOCK_AUTH_MODE = true; 
+const MOCK_AUTH_MODE = false; 
 
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | any | null>(null);
