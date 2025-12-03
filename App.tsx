@@ -17,7 +17,7 @@ const STORAGE_KEY = 'naturecam_photos';
 
 // --- CONFIGURATION ---
 // Set to TRUE to use LocalStorage instead of Supabase for Authentication.
-const MOCK_AUTH_MODE = false; 
+const MOCK_AUTH_MODE = true; 
 
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | any | null>(null);
@@ -30,21 +30,8 @@ const App: React.FC = () => {
 
   // 1. Check Auth Session (Real or Mock)
   useEffect(() => {
+    // DEV MODE: Start clean to allow manual login flow testing
     if (MOCK_AUTH_MODE) {
-        // DEV OVERRIDE: Automatically log in as "Mick"
-        const mickUser: User = {
-            id: 'user_mick_dev',
-            username: 'mick',
-            displayName: 'Hand Mick',
-            avatarUrl: 'https://api.dicebear.com/7.x/notionists/svg?seed=Mick',
-            bio: 'mickyboy',
-            followers: 42,
-            following: 12
-        };
-        
-        // Set session and profile immediately
-        setSession({ user: { id: mickUser.id, email: 'mick@test.com' } });
-        setUserProfile(mickUser);
         setIsInitializing(false);
         return;
     }
@@ -193,14 +180,13 @@ const App: React.FC = () => {
   };
 
   const handleMockAuthSuccess = (email: string) => {
-     // Not used in forced Mick mode, but kept for types
-     console.log("Mock auth", email);
+     setSession({ user: { id: 'dev-user-id', email } });
+     // Force onboarding flow for dev testing
+     setView(AppView.ONBOARDING);
   };
 
   const handleLogout = async () => {
       if (MOCK_AUTH_MODE) {
-          // In Mick mode, logout just refreshes to Mick essentially, 
-          // or we could clear state. For now, let's just reload to "reset".
           window.location.reload();
       } else {
           await supabase.auth.signOut();
