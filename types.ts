@@ -34,6 +34,7 @@ export interface Post {
   timestamp: number;
   likes: number;
   likedByMe: boolean;
+  logIndex: number; // Sequential number for the user's log
 }
 
 export enum CameraMode {

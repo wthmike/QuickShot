@@ -18,7 +18,6 @@ const STORAGE_KEY = 'naturecam_photos';
 
 // --- CONFIGURATION ---
 // Set to TRUE to use LocalStorage instead of Supabase for Authentication.
-// This allows you to "Sign Up" and "Login" using a local mock flow.
 const MOCK_AUTH_MODE = true; 
 
 const App: React.FC = () => {
@@ -33,18 +32,20 @@ const App: React.FC = () => {
   // 1. Check Auth Session (Real or Mock)
   useEffect(() => {
     if (MOCK_AUTH_MODE) {
-        // Check local storage for a "persisted" mock profile
-        // If we find one, we treat the user as "Logged In"
-        const storedProfile = localStorage.getItem('hippocam_mock_profile');
-        if (storedProfile) {
-            try {
-                const user = JSON.parse(storedProfile);
-                setSession({ user: { id: user.id, email: 'local@hippocam.app' } });
-                setUserProfile(user);
-            } catch (e) {
-                console.error("Failed to parse mock profile", e);
-            }
-        }
+        // DEV OVERRIDE: Automatically log in as "Mick"
+        const mickUser: User = {
+            id: 'user_mick_dev',
+            username: 'mick',
+            displayName: 'Hand Mick',
+            avatarUrl: 'https://api.dicebear.com/7.x/notionists/svg?seed=Mick',
+            bio: 'mickyboy',
+            followers: 42,
+            following: 12
+        };
+        
+        // Set session and profile immediately
+        setSession({ user: { id: mickUser.id, email: 'mick@test.com' } });
+        setUserProfile(mickUser);
         setIsInitializing(false);
         return;
     }
@@ -64,24 +65,9 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Fetch Profile when Session exists
+  // 2. Fetch Profile when Session exists (Only for Real Auth now)
   useEffect(() => {
-    // If in Mock Mode, we already set the profile in Step 1.
-    // However, if we just logged in via mock auth (handleMockAuthSuccess), we need to check.
-    if (MOCK_AUTH_MODE) {
-        if (session && !userProfile) {
-            // Check storage again, maybe just signed up/logged in?
-             const storedProfile = localStorage.getItem('hippocam_mock_profile');
-             if (storedProfile) {
-                setUserProfile(JSON.parse(storedProfile));
-                if (view === AppView.ONBOARDING) setView(AppView.FEED);
-             } else {
-                 // Session exists (Auth passed) but no profile -> Onboarding
-                 setView(AppView.ONBOARDING);
-             }
-        }
-        return;
-    }
+    if (MOCK_AUTH_MODE) return; // Handled in init
 
     const fetchProfile = async () => {
       if (!session?.user) return;
@@ -95,7 +81,6 @@ const App: React.FC = () => {
           .single();
 
         if (data) {
-          // Map Supabase profile to User type
           const mappedUser: User = {
              id: data.id,
              username: data.username,
@@ -106,12 +91,10 @@ const App: React.FC = () => {
              following: 0
           };
           setUserProfile(mappedUser);
-          // If we were in onboarding/auth, go to feed
           if (view === AppView.ONBOARDING) {
               setView(AppView.FEED);
           }
         } else {
-          // No profile found -> Onboarding
           setView(AppView.ONBOARDING);
         }
       } catch (e) {
@@ -210,20 +193,16 @@ const App: React.FC = () => {
       setView(AppView.FEED);
   };
 
-  // Mock handlers
   const handleMockAuthSuccess = (email: string) => {
-      // Create a fake session. Effect will kick in to check if profile exists for this session.
-      // For mock purposes, we generate a stable ID so persistence works if we used localstorage logic correctly.
-      // But for simplicity, we just use a generic mock ID.
-      setSession({ user: { id: 'mock_local_user', email } });
+     // Not used in forced Mick mode, but kept for types
+     console.log("Mock auth", email);
   };
 
   const handleLogout = async () => {
       if (MOCK_AUTH_MODE) {
-          localStorage.removeItem('hippocam_mock_profile');
-          setSession(null);
-          setUserProfile(null);
-          setView(AppView.FEED); // Will trigger Auth render
+          // In Mick mode, logout just refreshes to Mick essentially, 
+          // or we could clear state. For now, let's just reload to "reset".
+          window.location.reload();
       } else {
           await supabase.auth.signOut();
           setSession(null);

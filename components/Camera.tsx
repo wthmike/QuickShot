@@ -159,7 +159,7 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       }
 
       if (shots.length === BURST_SIZE) {
-         // Stitch frames into grid (Clean, no text)
+         // Stitch frames into grid
          const stitchedUrl = await stitchBurst(shots);
          
          const newPhoto: Photo = {
@@ -176,7 +176,7 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
 
     } catch (e) {
         console.error("Burst failed", e);
-        setError("MEM ERR");
+        setError("ERR");
     } finally {
         setIsTakingPhoto(false);
         setBurstCount(0);
@@ -190,10 +190,10 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       <div className="h-16 flex items-end justify-between px-4 pb-3 z-10 border-b border-neutral-900 bg-[#050505]">
          <div className="flex flex-col">
             <span className="text-[9px] uppercase tracking-widest text-neutral-500">Mode</span>
-            <span className="text-xs text-white font-bold">{isBnW ? 'MONO 35MM' : 'COLOR 35MM'}</span>
+            <span className="text-xs text-white font-bold">{isBnW ? 'B&W' : 'Colour'}</span>
          </div>
          <div className="flex flex-col items-end">
-            <span className="text-[9px] uppercase tracking-widest text-neutral-500">Location</span>
+            <span className="text-[9px] uppercase tracking-widest text-neutral-500">Current</span>
             <span className="text-xs text-white font-bold">{locationName.length > 15 ? locationName.slice(0, 15) + '..' : locationName}</span>
          </div>
       </div>
@@ -265,7 +265,7 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
                 onClick={() => setIsBnW(false)} 
                 className={`text-[10px] uppercase tracking-widest transition-colors ${!isBnW ? 'text-white border-b border-white' : 'text-neutral-600'}`}
              >
-                Color
+                Colour
              </button>
              <button 
                 onClick={() => setIsBnW(true)} 

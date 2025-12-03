@@ -149,11 +149,12 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
   };
 
   return (
-    <div className="h-[100dvh] w-full bg-[#050505] text-white flex flex-col items-center justify-center p-8 relative overflow-hidden font-sans selection:bg-white/20">
+    <div className="h-[100dvh] w-full bg-[#0f0f11] text-white flex flex-col items-center justify-center p-8 relative overflow-hidden font-sans selection:bg-white/20">
         
         {/* Ambient Breath Background */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-[#0a0a0a] to-[#000] z-0" />
-        <div className="absolute w-[500px] h-[500px] bg-neutral-900/10 rounded-full blur-3xl animate-pulse top-[-100px] left-[-100px] pointer-events-none" />
+        <div className="absolute inset-0 bg-[#0f0f11] z-0" />
+        {/* Soft natural gradient spot */}
+        <div className="absolute w-[600px] h-[600px] bg-green-900/10 rounded-full blur-3xl top-[-200px] right-[-200px] pointer-events-none" />
 
         {/* Content Container */}
         <div className="w-full max-w-md z-10 flex flex-col items-center min-h-[400px] justify-center transition-all duration-1000 ease-in-out">
@@ -161,17 +162,17 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
             {/* WELCOME PHASE */}
             {step === 0 && (
                 <div className="flex flex-col items-center animate-in fade-in duration-1000 slide-in-from-bottom-4 text-center">
-                    <h1 className="text-4xl font-light tracking-tight mb-6 text-white/90">
-                        Begin your Journey.
+                    <h1 className="text-4xl font-serif italic mb-6 text-white/90">
+                        Start your log.
                     </h1>
-                    <p className="text-neutral-500 font-light mb-12 max-w-xs leading-relaxed">
-                        Create a travel profile to document your observations.
+                    <p className="text-neutral-500 font-medium mb-12 max-w-xs leading-relaxed text-sm">
+                        A quiet place to document your hikes, travels, and observations.
                     </p>
                     <button 
                         onClick={() => setStep(1)}
-                        className="group flex items-center gap-4 text-sm uppercase tracking-[0.2em] text-neutral-400 hover:text-white transition-all"
+                        className="group flex items-center gap-4 text-sm font-bold text-white bg-neutral-800 hover:bg-neutral-700 px-8 py-3 rounded-full transition-all"
                     >
-                        Start
+                        Begin Setup
                         <span className="group-hover:translate-x-1 transition-transform">→</span>
                     </button>
                 </div>
@@ -180,8 +181,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
             {/* ERROR TOAST */}
             {error && (
                 <div className="absolute top-12 animate-in fade-in slide-in-from-top-2">
-                    <span className="text-red-400/80 text-xs tracking-widest font-mono border-b border-red-900/50 pb-1">
-                        ERROR: {error}
+                    <span className="text-red-400 text-sm font-medium bg-red-900/20 px-4 py-2 rounded-full">
+                        {error}
                     </span>
                 </div>
             )}
@@ -189,8 +190,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
             {/* STEP 1: IDENTITY */}
             {step === 1 && (
                 <div className="w-full animate-in fade-in zoom-in-95 duration-700 flex flex-col items-center">
-                    <label className="text-neutral-500 text-xs uppercase tracking-[0.3em] mb-8 font-light">
-                        Choose a Username
+                    <label className="text-neutral-500 text-sm font-medium mb-8">
+                        What should we call you?
                     </label>
                     <input 
                         ref={nameInputRef}
@@ -198,7 +199,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
                         value={formData.username}
                         onChange={(e) => setFormData({...formData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')})}
                         onKeyDown={handleKeyDown}
-                        className="w-full bg-transparent border-b border-neutral-800 py-4 text-3xl font-light text-center focus:border-neutral-500 outline-none transition-all placeholder-neutral-900 text-white"
+                        className="w-full bg-transparent border-b border-neutral-800 py-4 text-3xl font-bold text-center focus:border-white outline-none transition-all placeholder-neutral-800 text-white"
                         placeholder="username"
                         spellCheck={false}
                         enterKeyHint="next"
@@ -206,7 +207,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
                     <div className="mt-8">
                         <button 
                             onClick={handleNext}
-                            className="h-12 px-10 border border-neutral-800 text-white hover:bg-white hover:text-black hover:border-white transition-all uppercase text-xs tracking-[0.2em]"
+                            className="h-12 px-10 bg-white text-black rounded-full font-bold text-sm hover:bg-neutral-200 transition-all"
                         >
                             Next
                         </button>
@@ -217,20 +218,19 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
             {/* STEP 2: VISUAL */}
             {step === 2 && (
                 <div className="w-full animate-in fade-in zoom-in-95 duration-700 flex flex-col items-center">
-                     <label className="text-neutral-500 text-xs uppercase tracking-[0.3em] mb-8 font-light">
-                        Profile Picture
+                     <label className="text-neutral-500 text-sm font-medium mb-8">
+                        Add a photo
                     </label>
                     
                     <div 
                         onClick={() => fileInputRef.current?.click()}
-                        className="w-40 h-40 rounded-full bg-[#0a0a0a] border border-neutral-800 flex items-center justify-center cursor-pointer hover:border-neutral-600 transition-all group relative overflow-hidden"
+                        className="w-32 h-32 rounded-full bg-[#18181b] border border-neutral-800 flex items-center justify-center cursor-pointer hover:border-neutral-600 transition-all group relative overflow-hidden"
                     >
                         {formData.avatarUrl ? (
                             <img src={formData.avatarUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                         ) : (
-                            <div className="flex flex-col items-center gap-2 text-neutral-700 group-hover:text-neutral-400 transition-colors">
-                                <Upload size={20} strokeWidth={1} />
-                                <span className="text-[9px] uppercase tracking-widest">Upload</span>
+                            <div className="flex flex-col items-center gap-2 text-neutral-600 group-hover:text-neutral-400 transition-colors">
+                                <Upload size={20} strokeWidth={2} />
                             </div>
                         )}
                     </div>
@@ -242,17 +242,17 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
                             value={formData.displayName}
                             onChange={(e) => setFormData({...formData, displayName: e.target.value})}
                             onKeyDown={handleKeyDown}
-                            className="w-full bg-transparent text-center text-sm uppercase tracking-widest text-neutral-400 focus:text-white outline-none placeholder-neutral-800"
+                            className="w-full bg-transparent text-center text-lg font-medium text-white focus:text-white outline-none placeholder-neutral-700"
                             placeholder="Display Name (Optional)"
                             enterKeyHint="next"
                         />
                     </div>
 
                     <div className="mt-8 flex gap-4 items-center">
-                        <button onClick={() => setStep(1)} className="h-12 px-6 text-neutral-600 hover:text-white text-[10px] uppercase tracking-widest">Back</button>
+                        <button onClick={() => setStep(1)} className="text-neutral-500 hover:text-white text-sm font-medium px-4">Back</button>
                         <button 
                             onClick={handleNext} 
-                            className="h-12 px-10 border border-neutral-800 text-white hover:bg-white hover:text-black hover:border-white transition-all uppercase text-xs tracking-[0.2em]"
+                            className="h-12 px-10 bg-white text-black rounded-full font-bold text-sm hover:bg-neutral-200 transition-all"
                         >
                             Next
                         </button>
@@ -263,8 +263,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
             {/* STEP 3: BIO */}
             {step === 3 && (
                 <div className="w-full animate-in fade-in zoom-in-95 duration-700 flex flex-col items-center">
-                    <label className="text-neutral-500 text-xs uppercase tracking-[0.3em] mb-8 font-light">
-                        About You
+                    <label className="text-neutral-500 text-sm font-medium mb-8">
+                        Your short bio
                     </label>
                     
                     <textarea 
@@ -272,31 +272,31 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
                         onChange={(e) => setFormData({...formData, bio: e.target.value})}
                         onKeyDown={handleKeyDown}
                         maxLength={100}
-                        className="w-full bg-transparent border-l border-neutral-800 pl-6 py-2 text-xl font-light text-neutral-300 focus:text-white focus:border-neutral-600 outline-none transition-colors placeholder-neutral-800 resize-none h-32 leading-relaxed"
-                        placeholder="Where are you traveling?"
+                        className="w-full bg-transparent border border-neutral-800 rounded-xl p-4 text-lg font-serif italic text-white focus:border-neutral-600 outline-none transition-colors placeholder-neutral-800 resize-none h-32 leading-relaxed text-center"
+                        placeholder="Hiker. Dreamer. Etc."
                         autoFocus
                         enterKeyHint="done"
                     />
                     
                     <div className="w-full flex justify-end mt-2">
-                        <span className="text-[9px] text-neutral-700 tracking-widest">{formData.bio.length} / 100</span>
+                        <span className="text-xs text-neutral-700 font-medium">{formData.bio.length} / 100</span>
                     </div>
 
-                    <div className="mt-12">
+                    <div className="mt-8">
                         <button 
                             onClick={handleSubmit} 
                             disabled={loading}
-                            className="group relative px-8 py-3 border border-neutral-800 hover:bg-white hover:text-black hover:border-white transition-all duration-500 uppercase text-xs tracking-[0.2em]"
+                            className="group relative px-8 py-3 bg-white text-black rounded-full font-bold text-sm hover:bg-neutral-200 transition-all"
                         >
                             {loading ? (
                                 <Loader2 className="animate-spin" size={16} />
                             ) : (
-                                "Complete Profile"
+                                "Complete Setup"
                             )}
                         </button>
                     </div>
                     
-                    <button onClick={() => setStep(2)} className="mt-8 text-neutral-800 hover:text-neutral-600 text-[9px] uppercase tracking-widest transition-colors">
+                    <button onClick={() => setStep(2)} className="mt-6 text-neutral-600 hover:text-white text-xs font-medium">
                         Go Back
                     </button>
                 </div>
