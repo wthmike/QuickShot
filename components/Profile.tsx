@@ -102,7 +102,7 @@ export const Profile: React.FC<ProfileProps> = ({
                             onClick={onLogout} 
                             className="text-[9px] uppercase tracking-widest text-neutral-500 hover:text-white transition-colors self-start border-b border-transparent hover:border-white"
                         >
-                            Log Out ->
+                            Log Out &rarr;
                         </button>
                      )}
                      {!isOwner && (
