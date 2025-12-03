@@ -11,16 +11,15 @@ import { Auth } from './components/Auth';
 import { Onboarding } from './components/Onboarding';
 import { Photo, AppView, User } from './types';
 import { initDB, getAllPhotos, savePhoto, deletePhoto } from './services/storageService';
-import { CURRENT_USER } from './services/socialService';
 import { Loader2 } from 'lucide-react';
 import { Session, AuthChangeEvent } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'naturecam_photos';
 
-// --- DEVELOPMENT CONFIGURATION ---
-// Set to TRUE to bypass Login/Onboarding and use a mock user.
-// Set to FALSE to test actual Supabase Auth & Onboarding flows.
-const DEV_MODE = false; 
+// --- CONFIGURATION ---
+// Set to TRUE to use LocalStorage instead of Supabase for Authentication.
+// This allows you to "Sign Up" and "Login" using a local mock flow.
+const MOCK_AUTH_MODE = true; 
 
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | any | null>(null);
@@ -31,23 +30,21 @@ const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [checkingProfile, setCheckingProfile] = useState(false);
 
-  // 1. Check Auth Session (or Bypass in Dev Mode)
+  // 1. Check Auth Session (Real or Mock)
   useEffect(() => {
-    if (DEV_MODE) {
-        console.log("⚠️ DEV MODE ACTIVE: Bypassing Authentication");
-        // Simulate a valid Supabase session structure
-        setSession({ 
-            user: { 
-                id: CURRENT_USER.id, 
-                email: 'dev@hippocam.app',
-                app_metadata: {},
-                user_metadata: {},
-                aud: 'authenticated',
-                created_at: new Date().toISOString()
-            } as any
-        });
-        // Set the mock profile directly
-        setUserProfile(CURRENT_USER);
+    if (MOCK_AUTH_MODE) {
+        // Check local storage for a "persisted" mock profile
+        // If we find one, we treat the user as "Logged In"
+        const storedProfile = localStorage.getItem('hippocam_mock_profile');
+        if (storedProfile) {
+            try {
+                const user = JSON.parse(storedProfile);
+                setSession({ user: { id: user.id, email: 'local@hippocam.app' } });
+                setUserProfile(user);
+            } catch (e) {
+                console.error("Failed to parse mock profile", e);
+            }
+        }
         setIsInitializing(false);
         return;
     }
@@ -67,9 +64,24 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Fetch Profile when Session exists (Skipped in Dev Mode)
+  // 2. Fetch Profile when Session exists
   useEffect(() => {
-    if (DEV_MODE) return; // Profile already set in step 1
+    // If in Mock Mode, we already set the profile in Step 1.
+    // However, if we just logged in via mock auth (handleMockAuthSuccess), we need to check.
+    if (MOCK_AUTH_MODE) {
+        if (session && !userProfile) {
+            // Check storage again, maybe just signed up/logged in?
+             const storedProfile = localStorage.getItem('hippocam_mock_profile');
+             if (storedProfile) {
+                setUserProfile(JSON.parse(storedProfile));
+                if (view === AppView.ONBOARDING) setView(AppView.FEED);
+             } else {
+                 // Session exists (Auth passed) but no profile -> Onboarding
+                 setView(AppView.ONBOARDING);
+             }
+        }
+        return;
+    }
 
     const fetchProfile = async () => {
       if (!session?.user) return;
@@ -110,10 +122,10 @@ const App: React.FC = () => {
       }
     };
 
-    if (session) {
+    if (session && !userProfile) {
       fetchProfile();
     }
-  }, [session]);
+  }, [session, view, userProfile]);
 
   // 3. Initialize DB and Load Local Photos
   useEffect(() => {
@@ -198,6 +210,27 @@ const App: React.FC = () => {
       setView(AppView.FEED);
   };
 
+  // Mock handlers
+  const handleMockAuthSuccess = (email: string) => {
+      // Create a fake session. Effect will kick in to check if profile exists for this session.
+      // For mock purposes, we generate a stable ID so persistence works if we used localstorage logic correctly.
+      // But for simplicity, we just use a generic mock ID.
+      setSession({ user: { id: 'mock_local_user', email } });
+  };
+
+  const handleLogout = async () => {
+      if (MOCK_AUTH_MODE) {
+          localStorage.removeItem('hippocam_mock_profile');
+          setSession(null);
+          setUserProfile(null);
+          setView(AppView.FEED); // Will trigger Auth render
+      } else {
+          await supabase.auth.signOut();
+          setSession(null);
+          setUserProfile(null);
+      }
+  };
+
   const selectedPhoto = photos.find(p => p.id === selectedPhotoId);
 
   // Loading State
@@ -211,12 +244,24 @@ const App: React.FC = () => {
 
   // Auth Guard
   if (!session) {
-      return <Auth />;
+      return (
+        <Auth 
+            isMockMode={MOCK_AUTH_MODE} 
+            onMockLogin={handleMockAuthSuccess} 
+        />
+      );
   }
 
   // Onboarding Guard
   if (view === AppView.ONBOARDING) {
-      return <Onboarding userId={session.user.id} email={session.user.email} onComplete={handleOnboardingComplete} />;
+      return (
+        <Onboarding 
+            userId={session.user.id} 
+            email={session.user.email} 
+            onComplete={handleOnboardingComplete}
+            isMockMode={MOCK_AUTH_MODE}
+        />
+      );
   }
 
   // Main App
@@ -233,6 +278,7 @@ const App: React.FC = () => {
             <Profile 
                 onOpenLocalGallery={() => setView(AppView.LOCAL_GALLERY)} 
                 currentUser={userProfile || undefined}
+                onLogout={handleLogout}
             />
         )}
 
@@ -260,6 +306,7 @@ const App: React.FC = () => {
             onUpdatePhoto={handleUpdatePhoto}
             onDelete={handleDeletePhoto}
             onPostComplete={handlePostComplete}
+            currentUser={userProfile || undefined}
           />
         )}
       </div>

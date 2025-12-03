@@ -15,41 +15,7 @@ async function resizeImage(img: HTMLImageElement, maxWidth: number): Promise<HTM
     return canvas;
 }
 
-// Utility to wrap text for canvas
-function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): number {
-    const words = text.split(' ');
-    let line = '';
-    let currentY = y;
-
-    // If text preserves newlines, handle them
-    const paragraphs = text.split('\n');
-
-    for(let p = 0; p < paragraphs.length; p++) {
-        const words = paragraphs[p].split(' ');
-        line = '';
-        for (let n = 0; n < words.length; n++) {
-            const testLine = line + words[n] + ' ';
-            const metrics = ctx.measureText(testLine);
-            const testWidth = metrics.width;
-            if (testWidth > maxWidth && n > 0) {
-                ctx.fillText(line, x, currentY);
-                line = words[n] + ' ';
-                currentY += lineHeight;
-            } else {
-                line = testLine;
-            }
-        }
-        ctx.fillText(line, x, currentY);
-        currentY += lineHeight;
-        // Extra gap for paragraphs
-        if (p < paragraphs.length - 1) {
-             currentY += (lineHeight * 0.5);
-        }
-    }
-    return currentY;
-}
-
-export async function stitchBurst(images: string[], headerText: string, footerText: string): Promise<string> {
+export async function stitchBurst(images: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     if (images.length !== 4) {
       reject(new Error("Burst requires exactly 4 images"));
@@ -70,7 +36,6 @@ export async function stitchBurst(images: string[], headerText: string, footerTe
       .then(async () => {
         try {
             // SAFETY: Resize images first.
-            // Target 800px squares.
             const TARGET_SIZE = 800; 
             const resizedCanvases = await Promise.all(
                 imgObjects.map(img => resizeImage(img, TARGET_SIZE))
@@ -78,12 +43,9 @@ export async function stitchBurst(images: string[], headerText: string, footerTe
 
             const size = resizedCanvases[0].width; // Assuming square
             
-            // Dynamic Layout: 2x2 Grid (Quadtych Poster)
-            // Style: Swiss Editorial
-            const padding = Math.floor(size * 0.1); // Outer margin
-            const gap = Math.floor(size * 0.04);     // Gap between grid items
-            const headerHeight = Math.floor(size * 0.3); 
-            const footerHeight = Math.floor(size * 0.4); 
+            // Dynamic Layout: 2x2 Grid (Clean)
+            const padding = Math.floor(size * 0.05); // Small outer matte
+            const gap = Math.floor(size * 0.02);     // Tiny gap between grid items
             
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -94,26 +56,18 @@ export async function stitchBurst(images: string[], headerText: string, footerTe
             }
 
             // Width: Padding + Image + Gap + Image + Padding
-            const gridWidth = (size * 2) + gap;
-            canvas.width = gridWidth + (padding * 2);
+            const gridWidth = (size * 2) + gap + (padding * 2);
+            // Height: Same (Square output)
+            const gridHeight = (size * 2) + gap + (padding * 2);
             
-            // Height: Header + GridHeight + Footer
-            const gridHeight = (size * 2) + gap;
-            canvas.height = headerHeight + gridHeight + footerHeight + padding; // Extra padding at bottom
+            canvas.width = gridWidth;
+            canvas.height = gridHeight;
 
             // 1. Background (Matte Black)
-            ctx.fillStyle = '#0a0a0a';
+            ctx.fillStyle = '#050505';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // 2. Header
-            // Replaced HIPPOCAM with Coordinates (headerText)
-            ctx.fillStyle = '#E5E5E5';
-            ctx.font = `600 ${Math.floor(size * 0.05)}px Inter, sans-serif`;
-            ctx.textAlign = 'left';
-            ctx.letterSpacing = '0.05em';
-            ctx.fillText(headerText.toUpperCase(), padding, headerHeight * 0.65);
-            
-            // 3. Draw Grid
+            // 2. Draw Grid
             resizedCanvases.forEach((img, index) => {
                 // Col: 0 or 1
                 const col = index % 2;
@@ -121,53 +75,14 @@ export async function stitchBurst(images: string[], headerText: string, footerTe
                 const row = Math.floor(index / 2);
 
                 const x = padding + (col * (size + gap));
-                const y = headerHeight + (row * (size + gap));
+                const y = padding + (row * (size + gap));
 
                 // Draw Image
                 ctx.drawImage(img, x, y, size, size);
-
-                // Optional: Draw a thin white border around each photo for separation
-                ctx.strokeStyle = '#222';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(x, y, size, size);
             });
 
-            // 4. Footer Metadata
-            const footerY = headerHeight + gridHeight + (padding * 0.8);
-            
-            ctx.fillStyle = '#E5E5E5';
-            ctx.textAlign = 'left';
-            
-            // Location Name (Replaces old coords/random number)
-            ctx.font = `700 ${Math.floor(size * 0.08)}px Inter, sans-serif`;
-            ctx.letterSpacing = '-0.03em';
-            
-            // Truncate footer text if too long to avoid overlap with date
-            let displayFooter = footerText.toUpperCase();
-            const maxFooterWidth = canvas.width * 0.6;
-            if (ctx.measureText(displayFooter).width > maxFooterWidth) {
-                 // Simple truncation
-                 while (ctx.measureText(displayFooter + '...').width > maxFooterWidth && displayFooter.length > 0) {
-                     displayFooter = displayFooter.slice(0, -1);
-                 }
-                 displayFooter += '...';
-            }
-            
-            ctx.fillText(displayFooter, padding, footerY + (size * 0.1));
-            
-            // Info Block
-            const date = new Date();
-            const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
-            const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-            ctx.textAlign = 'right';
-            ctx.fillStyle = '#666';
-            ctx.font = `500 ${Math.floor(size * 0.04)}px Inter, sans-serif`;
-            ctx.letterSpacing = '0.05em';
-            ctx.fillText(`${dateStr} — ${timeStr}`, canvas.width - padding, footerY + (size * 0.1));
-
-            // COMPRESSION: Use WebP at 0.80 quality
-            resolve(canvas.toDataURL('image/webp', 0.80));
+            // COMPRESSION: Use WebP at 0.85 quality
+            resolve(canvas.toDataURL('image/webp', 0.85));
         } catch (e) {
             reject(e);
         }
@@ -176,13 +91,51 @@ export async function stitchBurst(images: string[], headerText: string, footerTe
   });
 }
 
-export async function processImageNatural(base64Image: string, caption?: string): Promise<{ combinedUrl: string, frames: string[] }> {
+// Helper to apply directional motion blur to a specific region
+function applyMotionBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+    // To simulate motion blur we draw the region multiple times with opacity and offset
+    const steps = 8;
+    const distance = 12 + Math.random() * 10; // 12-22px blur
+    const angle = (Math.random() - 0.5) * Math.PI; // Random angle between -90 and 90
+
+    // Capture the region
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = w;
+    tempCanvas.height = h;
+    const tCtx = tempCanvas.getContext('2d');
+    if (!tCtx) return;
+    
+    tCtx.drawImage(ctx.canvas, x, y, w, h, 0, 0, w, h);
+
+    // Apply blur to the region on the main canvas
+    ctx.save();
+    // Clip to the region so we don't blur over borders
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+
+    ctx.globalAlpha = 0.2; // Low opacity for accumulation
+    
+    // Draw multiple times shifted
+    for (let i = 0; i < steps; i++) {
+        const progress = (i / (steps - 1)) - 0.5; // -0.5 to 0.5
+        const offsetX = Math.cos(angle) * distance * progress;
+        const offsetY = Math.sin(angle) * distance * progress;
+        
+        // Draw slightly larger to cover gaps, though clipping handles it
+        ctx.drawImage(tempCanvas, 0, 0, w, h, x + offsetX, y + offsetY, w, h);
+    }
+    
+    ctx.restore();
+}
+
+export async function processImageNatural(base64Image: string): Promise<{ combinedUrl: string, frames: string[] }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "Anonymous";
     img.onload = () => {
       try {
-        // SAFETY: Downscale large images to prevent crash.
+        // SAFETY: Downscale large images
         let targetWidth = img.width;
         let targetHeight = img.height;
         const MAX_WIDTH = 2000;
@@ -193,26 +146,6 @@ export async function processImageNatural(base64Image: string, caption?: string)
             targetHeight = img.height * scale;
         }
 
-        // --- Calculate Internal Layout Metrics ---
-        // We need to know where the footer text (Location Name) sits to place the caption right underneath.
-        // We reverse-engineer the logic from stitchBurst using the width.
-        // Formula: gridWidth = (size * 2) + gap + (padding * 2)
-        // With ratios: size*2 + size*0.04 + size*0.2 = size * 2.24
-        // So:
-        const gridSize = Math.floor(targetWidth / 2.24); // This corresponds to 'size' in stitchBurst
-        const padding = Math.floor(gridSize * 0.1);
-        const gap = Math.floor(gridSize * 0.04);
-        const headerHeight = Math.floor(gridSize * 0.3);
-        const gridHeight = (gridSize * 2) + gap;
-        const footerY = headerHeight + gridHeight + (padding * 0.8);
-        const locationFontSize = Math.floor(gridSize * 0.08);
-        
-        // Approximate Y position where the Location Name ends
-        // location text drawn at: footerY + (gridSize * 0.1)
-        // Its baseline is there. So we add a small gap below the baseline.
-        const locationBaselineY = footerY + (gridSize * 0.1);
-        const captionStartY = locationBaselineY + (locationFontSize * 0.4); // Tighter spacing
-
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         
@@ -222,141 +155,98 @@ export async function processImageNatural(base64Image: string, caption?: string)
         }
 
         canvas.width = targetWidth;
-        canvas.height = targetHeight; // Try to fit in existing height first
+        canvas.height = targetHeight;
 
-        // Fill Base (Black)
-        ctx.fillStyle = '#0a0a0a';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // --- STEP 1: DRAW BASE IMAGE ---
+        // --- STEP 1: BASE RENDER ---
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
-        // --- STEP 1.5: SELECTIVE FAUX MOTION BLUR ---
-        const photoRects = [
-            { x: padding, y: headerHeight, w: gridSize, h: gridSize }, // TL
-            { x: padding + gridSize + gap, y: headerHeight, w: gridSize, h: gridSize }, // TR
-            { x: padding, y: headerHeight + gridSize + gap, w: gridSize, h: gridSize }, // BL
-            { x: padding + gridSize + gap, y: headerHeight + gridSize + gap, w: gridSize, h: gridSize } // BR
+        // --- STEP 1.5: RANDOM MOTION BLUR (Development Effect) ---
+        // We want to blur 2 random photos out of the 4.
+        // The image is a 2x2 grid. We need to find the coordinates of the 4 quadrants.
+        // We know from stitchBurst: padding approx 5%, gap 2%.
+        // Let's approximate the quadrants based on canvas size.
+        
+        const qSize = Math.floor(canvas.width / 2.12); // Based on stitchBurst math reverse engineered roughly
+        // Better approximation: The grid is symmetrical.
+        // The content area is roughly canvas.width.
+        // Let's assume standard grid layout logic:
+        
+        const padding = canvas.width * 0.05;
+        const gap = canvas.width * 0.02;
+        const cellSize = (canvas.width - (padding * 2) - gap) / 2;
+        
+        const quadrants = [
+            { x: padding, y: padding, w: cellSize, h: cellSize }, // Top Left
+            { x: padding + cellSize + gap, y: padding, w: cellSize, h: cellSize }, // Top Right
+            { x: padding, y: padding + cellSize + gap, w: cellSize, h: cellSize }, // Bottom Left
+            { x: padding + cellSize + gap, y: padding + cellSize + gap, w: cellSize, h: cellSize } // Bottom Right
         ];
 
-        // Randomly select 2 unique indices for the "shutter drag" effect
-        const indices = [0, 1, 2, 3];
-        indices.sort(() => Math.random() - 0.5);
-        const selectedIndices = indices.slice(0, 2);
-
-        selectedIndices.forEach(idx => {
-            const rect = photoRects[idx];
-            
-            const photoCanvas = document.createElement('canvas');
-            photoCanvas.width = rect.w;
-            photoCanvas.height = rect.h;
-            const pCtx = photoCanvas.getContext('2d');
-            if (!pCtx) return;
-            pCtx.drawImage(canvas, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
-
-            const blurCanvas = document.createElement('canvas');
-            blurCanvas.width = rect.w;
-            blurCanvas.height = rect.h;
-            const bCtx = blurCanvas.getContext('2d');
-            if (!bCtx) return;
-
-            const numCopies = 8;
-            const blurAmount = gridSize * 0.012;
-            const angle = (Math.random() * Math.PI / 4) - (Math.PI / 8);
-
-            bCtx.globalCompositeOperation = 'source-over';
-            
-            const zoom = 1.05;
-            const zw = rect.w * zoom;
-            const zh = rect.h * zoom;
-            const zx = (rect.w - zw) / 2;
-            const zy = (rect.h - zh) / 2;
-            
-            for (let i = 0; i < numCopies; i++) {
-                const ratio = i / (numCopies - 1); 
-                const offset = (ratio - 0.5) * blurAmount;
-                const ox = offset * Math.cos(angle);
-                const oy = offset * Math.sin(angle);
-                const alpha = 1.0 / (numCopies * 0.6); 
-                bCtx.globalAlpha = alpha;
-                bCtx.drawImage(photoCanvas, zx + ox, zy + oy, zw, zh);
-            }
-            
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(rect.x, rect.y, rect.w, rect.h);
-            ctx.clip();
-            ctx.drawImage(blurCanvas, rect.x, rect.y, rect.w, rect.h);
-            ctx.restore();
-
-            ctx.strokeStyle = '#222';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        // Pick 2 distinct random indices
+        const indices = [0, 1, 2, 3].sort(() => 0.5 - Math.random()).slice(0, 2);
+        
+        indices.forEach(idx => {
+            const q = quadrants[idx];
+            applyMotionBlur(ctx, q.x, q.y, q.w, q.h);
         });
 
-        // --- STEP 2: DRAW CAPTION (INTEGRATED) ---
-        // Style: Small, technical, grey, just underneath location name
-        if (caption && caption.trim().length > 0) {
-             const fontSize = Math.floor(gridSize * 0.035); // Small font
-             const lineHeight = fontSize * 1.4;
-             const maxTextWidth = canvas.width - (padding * 2);
 
-             ctx.fillStyle = '#999'; // Slightly lighter grey for readability
-             ctx.font = `400 ${fontSize}px Inter, sans-serif`; 
-             ctx.textAlign = 'left';
-             ctx.textBaseline = 'top';
-             ctx.letterSpacing = '0.02em';
+        // --- STEP 2: FILM EMULATION (Portra 400 Style) ---
+        // Portra 400: Warm, natural saturation, fine grain, good skin tones.
 
-             // Check if we need to extend canvas height
-             const measureLinesHeight = wrapText(ctx, caption, padding, captionStartY, maxTextWidth, lineHeight) - captionStartY;
-             const requiredHeight = captionStartY + measureLinesHeight + padding;
-
-             if (requiredHeight > canvas.height) {
-                 // Get current image data
-                 const currentImage = ctx.getImageData(0,0,canvas.width, canvas.height);
-                 canvas.height = requiredHeight;
-                 ctx.fillStyle = '#0a0a0a';
-                 ctx.fillRect(0,0, canvas.width, canvas.height);
-                 ctx.putImageData(currentImage, 0, 0);
-                 
-                 // Reset context state after resize
-                 ctx.fillStyle = '#999';
-                 ctx.font = `400 ${fontSize}px Inter, sans-serif`; 
-                 ctx.textAlign = 'left';
-                 ctx.textBaseline = 'top';
-                 ctx.letterSpacing = '0.02em';
-             }
-
-             wrapText(ctx, caption, padding, captionStartY, maxTextWidth, lineHeight);
+        // A. BASE TONE CURVE
+        // Portra has a gentle contrast, not harsh.
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tCtx = tempCanvas.getContext('2d');
+        if (tCtx) {
+            // Slight contrast, slight saturation bump for "pop"
+            tCtx.filter = 'contrast(1.05) saturate(1.1) brightness(1.02)';
+            tCtx.drawImage(canvas, 0, 0);
+            ctx.drawImage(tempCanvas, 0, 0);
         }
 
-        // --- STEP 3: HIGH-END PORTRA LOOK ---
+        // B. WARM HIGHLIGHTS (The "Portra Glow")
+        // Instead of red halation, we use a soft warm white glow for highlights.
+        const glowCanvas = document.createElement('canvas');
+        glowCanvas.width = canvas.width / 4;
+        glowCanvas.height = canvas.height / 4;
+        const gCtx = glowCanvas.getContext('2d');
         
-        // A. HALATION (Bloom)
-        const halationCanvas = document.createElement('canvas');
-        halationCanvas.width = canvas.width;
-        halationCanvas.height = canvas.height;
-        const hCtx = halationCanvas.getContext('2d');
-        if (hCtx) {
-            hCtx.drawImage(canvas, 0, 0);
-            hCtx.filter = 'blur(10px)'; 
-            hCtx.drawImage(halationCanvas, 0, 0); 
+        if (gCtx) {
+            // Isolate highlights
+            gCtx.filter = 'grayscale(100%) contrast(200%) brightness(0.6)'; 
+            gCtx.drawImage(canvas, 0, 0, glowCanvas.width, glowCanvas.height);
+            
+            // Blur
+            gCtx.filter = 'blur(8px)';
+            gCtx.drawImage(glowCanvas, 0, 0);
+            
+            // Colorize: Warm Creamy Yellow
+            gCtx.globalCompositeOperation = 'source-in';
+            gCtx.fillStyle = '#ffeedd'; 
+            gCtx.fillRect(0, 0, glowCanvas.width, glowCanvas.height);
+
+            // Composite: Screen or Soft Light
             ctx.globalCompositeOperation = 'screen';
-            ctx.globalAlpha = 0.2; 
-            ctx.drawImage(halationCanvas, 0, 0);
+            ctx.globalAlpha = 0.3; // Subtle
+            ctx.drawImage(glowCanvas, 0, 0, canvas.width, canvas.height);
             ctx.globalAlpha = 1.0;
         }
 
-        // B. COLOR GRADING 
+        // C. COLOR GRADING (Split Tone)
+        // 1. Shadows: Very subtle Teal/Blue
+        ctx.globalCompositeOperation = 'lighten';
+        ctx.fillStyle = 'rgba(10, 20, 30, 0.08)'; 
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 2. Mids/Highs: Warm Overlay
         ctx.globalCompositeOperation = 'overlay';
-        ctx.fillStyle = 'rgba(255, 230, 210, 0.15)'; 
+        ctx.fillStyle = 'rgba(255, 220, 180, 0.05)'; 
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        ctx.globalCompositeOperation = 'soft-light';
-        ctx.fillStyle = 'rgba(10, 20, 30, 0.15)'; 
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // C. FINE GRAIN 
+        // D. FINE ORGANIC GRAIN
         ctx.globalCompositeOperation = 'overlay';
         const grainCanvas = document.createElement('canvas');
         grainCanvas.width = 256; 
@@ -366,50 +256,55 @@ export async function processImageNatural(base64Image: string, caption?: string)
             const imageData = grainCtx.createImageData(256, 256);
             const data = imageData.data;
             for (let i = 0; i < data.length; i += 4) {
-                const val = 100 + Math.random() * 55; 
+                // Finer noise for Portra
+                const val = 120 + Math.random() * 30; 
                 data[i] = val;     
                 data[i + 1] = val; 
                 data[i + 2] = val; 
-                data[i + 3] = 35;  
+                data[i + 3] = 30; // Very transparent
             }
             grainCtx.putImageData(imageData, 0, 0);
+            
             const pattern = ctx.createPattern(grainCanvas, 'repeat');
             if (pattern) {
                 ctx.fillStyle = pattern;
-                ctx.globalAlpha = 0.8; 
+                ctx.globalAlpha = 0.6; 
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.globalAlpha = 1.0;
             }
         }
-        
+
+        // E. VIGNETTE (Subtle)
+        ctx.globalCompositeOperation = 'multiply';
+        const grad = ctx.createRadialGradient(
+            canvas.width / 2, canvas.height / 2, canvas.width * 0.5,
+            canvas.width / 2, canvas.height / 2, canvas.width * 0.95
+        );
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.2)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Reset
         ctx.globalCompositeOperation = 'source-over';
 
-        // --- STEP 4: EXTRACT INDIVIDUAL PROCESSED FRAMES ---
-        // We cut the canvas back into 4 frames so we can loop them with all filters applied.
+        // --- STEP 3: EXTRACT FRAMES ---
+        // Same geometry logic as before to slice the grid back up
         const processedFrames: string[] = [];
-        const extractRects = [
-            { x: padding, y: headerHeight, w: gridSize, h: gridSize },
-            { x: padding + gridSize + gap, y: headerHeight, w: gridSize, h: gridSize },
-            { x: padding, y: headerHeight + gridSize + gap, w: gridSize, h: gridSize },
-            { x: padding + gridSize + gap, y: headerHeight + gridSize + gap, w: gridSize, h: gridSize }
-        ];
-
-        for (const rect of extractRects) {
+        
+        for (const q of quadrants) {
             const tempC = document.createElement('canvas');
-            tempC.width = rect.w;
-            tempC.height = rect.h;
+            tempC.width = q.w;
+            tempC.height = q.h;
             const tempCtx = tempC.getContext('2d');
             if (tempCtx) {
-                // Grab the exact pixels from the final canvas
-                tempCtx.drawImage(canvas, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
-                // COMPRESSION: Use WebP at 0.80
-                processedFrames.push(tempC.toDataURL('image/webp', 0.80));
+                tempCtx.drawImage(canvas, q.x, q.y, q.w, q.h, 0, 0, q.w, q.h);
+                processedFrames.push(tempC.toDataURL('image/webp', 0.85));
             }
         }
 
         resolve({
-            // COMPRESSION: Use WebP at 0.80
-            combinedUrl: canvas.toDataURL('image/webp', 0.80),
+            combinedUrl: canvas.toDataURL('image/webp', 0.90),
             frames: processedFrames
         });
       } catch (e) {

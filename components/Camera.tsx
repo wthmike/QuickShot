@@ -1,6 +1,8 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Photo } from '../types';
 import { stitchBurst } from '../services/geminiService';
+import { Loader2 } from 'lucide-react';
 
 interface CameraProps {
   onCapture: (photo: Photo) => void;
@@ -14,12 +16,13 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [isTakingPhoto, setIsTakingPhoto] = useState(false);
-  const [burstCount, setBurstCount] = useState(0); // 0 = idle, 1-4 = capturing
+  const [burstCount, setBurstCount] = useState(0); 
   const [error, setError] = useState<string | null>(null);
+  const [isBnW, setIsBnW] = useState(false); // Black and White Mode
   
   // State for location
   const [coordsText, setCoordsText] = useState<string>("00.00°N, 00.00°W");
-  const [locationName, setLocationName] = useState<string>("UNKNOWN LOCATION");
+  const [locationName, setLocationName] = useState<string>("LOCATING...");
 
   const startCamera = useCallback(async () => {
     try {
@@ -30,7 +33,6 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       const constraints: MediaStreamConstraints = {
         video: {
           facingMode: facingMode,
-          // OPTIMIZATION: Request 1080p instead of 4K to save memory on mobile
           width: { ideal: 1920 },
           height: { ideal: 1920 }, 
           aspectRatio: { ideal: 1 }
@@ -46,36 +48,30 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       setError(null);
     } catch (err) {
       console.error("Camera error:", err);
-      setError("CAMERA ACCESS DENIED");
+      setError("NO SIGNAL");
     }
   }, [facingMode]);
 
   useEffect(() => {
     startCamera();
     
-    // Fetch location and reverse geocode
     if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(
             async (position) => {
                 const { latitude, longitude } = position.coords;
                 const latDir = latitude >= 0 ? 'N' : 'S';
                 const lonDir = longitude >= 0 ? 'E' : 'W';
-                // Format: 34.05°N, 118.24°W
-                const formattedCoords = `${Math.abs(latitude).toFixed(2)}°${latDir}, ${Math.abs(longitude).toFixed(2)}°${lonDir}`;
+                const formattedCoords = `${Math.abs(latitude).toFixed(4)}°${latDir}, ${Math.abs(longitude).toFixed(4)}°${lonDir}`;
                 setCoordsText(formattedCoords);
 
-                // Attempt Reverse Geocoding
                 try {
                     const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
-                        headers: {
-                            'User-Agent': 'HippoCam/1.0'
-                        }
+                        headers: { 'User-Agent': 'HippoCam/1.0' }
                     });
                     if (response.ok) {
                         const data = await response.json();
                         const addr = data.address;
-                        // Construct "City, State" or similar
-                        const city = addr.city || addr.town || addr.village || addr.hamlet || addr.suburb;
+                        const city = addr.city || addr.town || addr.village || addr.suburb;
                         const state = addr.state || addr.country;
                         
                         if (city && state) {
@@ -87,19 +83,14 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
                         }
                     }
                 } catch (e) {
-                    console.warn("Reverse geocode failed", e);
-                    // Fallback to coords if name fails, or just keep UNKNOWN
-                    // But usually we just keep "UNKNOWN LOCATION" or set it to coords
-                    // Let's stick with a technical fallback
-                    setLocationName("LOCATION SIGNAL LOCK");
+                    setLocationName("OFFLINE");
                 }
             },
             (err) => {
-                console.warn("Geolocation denied or error", err);
-                setCoordsText("NO SIGNAL");
-                setLocationName("OFF GRID");
+                setCoordsText("NO GPS");
+                setLocationName("OFFLINE");
             },
-            { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+            { enableHighAccuracy: true }
         );
     }
 
@@ -108,28 +99,22 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
         stream.getTracks().forEach(track => track.stop());
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facingMode]);
 
   const toggleCamera = () => {
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
   };
 
-  // Instant capture of a single frame
   const captureFrame = async (): Promise<string | null> => {
     if (!videoRef.current || !canvasRef.current) return null;
     
     const video = videoRef.current;
     const canvas = canvasRef.current;
     
-    // Calculate crop for Square Aspect Ratio (1:1)
     const minDim = Math.min(video.videoWidth, video.videoHeight);
     const startX = (video.videoWidth - minDim) / 2;
     const startY = (video.videoHeight - minDim) / 2;
 
-    // OPTIMIZATION: Limit capture size to 1080px.
-    // This dramatically reduces memory usage (RAM) and prevents OOM crashes on iOS/Android
-    // when storing 4 consecutive burst shots + processing them.
     const MAX_CAPTURE_SIZE = 1080;
     const finalDim = Math.min(minDim, MAX_CAPTURE_SIZE);
 
@@ -144,17 +129,13 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       ctx.scale(-1, 1);
     }
 
-    // Draw and downscale in one step
-    ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, finalDim, finalDim);
-
-    // Trigger visual flash
-    const flashEl = document.getElementById('camera-flash');
-    if (flashEl) {
-      flashEl.style.opacity = '1';
-      setTimeout(() => flashEl.style.opacity = '0', 50);
+    // Apply B&W if active
+    if (isBnW) {
+        ctx.filter = 'grayscale(100%) contrast(110%)';
     }
 
-    // Use slightly lower quality (0.85) to reduce base64 string size for better performance
+    ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, finalDim, finalDim);
+
     return canvas.toDataURL('image/jpeg', 0.85);
   };
 
@@ -164,8 +145,7 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
 
     const shots: string[] = [];
     const BURST_SIZE = 4;
-    // Fast burst (approx 12fps equivalent delay) to capture movement naturally without sluggishness
-    const DELAY_MS = 80; 
+    const DELAY_MS = 100; 
 
     try {
       for (let i = 1; i <= BURST_SIZE; i++) {
@@ -173,142 +153,153 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
         const frame = await captureFrame();
         if (frame) shots.push(frame);
         
-        // Small delay between shots, but don't delay after the last one
         if (i < BURST_SIZE) {
             await new Promise(r => setTimeout(r, DELAY_MS));
         }
       }
 
-      // Stitch
       if (shots.length === BURST_SIZE) {
-         // Pass current location data to stitcher
-         const stitchedUrl = await stitchBurst(shots, coordsText, locationName);
+         // Stitch frames into grid (Clean, no text)
+         const stitchedUrl = await stitchBurst(shots);
          
          const newPhoto: Photo = {
             id: crypto.randomUUID(),
             originalUrl: stitchedUrl,
-            frames: shots, // Store raw frames for playback
+            frames: shots,
             timestamp: Date.now(),
-            status: 'pending'
+            status: 'pending',
+            locationName: locationName,
+            coordinates: coordsText
           };
           onCapture(newPhoto);
       }
 
     } catch (e) {
         console.error("Burst failed", e);
-        setError("MEM ERROR - RETRY");
+        setError("MEM ERR");
     } finally {
         setIsTakingPhoto(false);
         setBurstCount(0);
     }
   };
 
-  const currentDate = new Date().toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '.');
-
   return (
-    <div className="relative h-full w-full bg-[#050505] flex flex-col text-white">
-      {/* Header Info */}
-      <div className="h-16 flex items-end justify-between px-6 pb-2 z-10">
-        <div className="flex flex-col">
-          <span className="text-[10px] tracking-[0.25em] font-medium text-neutral-500 uppercase">Mode</span>
-          <span className="text-xs tracking-widest font-bold uppercase text-white">6x6 Format</span>
-        </div>
-        <div className="flex flex-col items-end">
-          <span className="text-[10px] tracking-[0.25em] font-medium text-neutral-500 uppercase">Date</span>
-          <span className="text-xs tracking-widest font-bold uppercase text-white">{currentDate}</span>
-        </div>
+    <div className="relative h-full w-full bg-[#050505] flex flex-col text-white font-mono">
+      
+      {/* Top HUD */}
+      <div className="h-16 flex items-end justify-between px-4 pb-3 z-10 border-b border-neutral-900 bg-[#050505]">
+         <div className="flex flex-col">
+            <span className="text-[9px] uppercase tracking-widest text-neutral-500">Mode</span>
+            <span className="text-xs text-white font-bold">{isBnW ? 'MONO 35MM' : 'COLOR 35MM'}</span>
+         </div>
+         <div className="flex flex-col items-end">
+            <span className="text-[9px] uppercase tracking-widest text-neutral-500">Location</span>
+            <span className="text-xs text-white font-bold">{locationName.length > 15 ? locationName.slice(0, 15) + '..' : locationName}</span>
+         </div>
       </div>
 
       {/* Main Viewport Stage */}
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#080808] relative">
+      <div className="flex-1 flex flex-col items-center justify-center bg-[#111] relative overflow-hidden">
         
         {/* The Square Viewfinder */}
-        <div className="relative w-full max-w-md aspect-square bg-black overflow-hidden shadow-2xl border-t border-b border-neutral-900">
+        <div className="relative w-full max-w-md aspect-square bg-black overflow-hidden border-x border-neutral-800">
             <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className={`absolute inset-0 w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+                style={{ filter: isBnW ? 'grayscale(100%) contrast(110%)' : 'none' }}
             />
             
             {error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black">
-                <span className="text-xs font-mono text-red-500 tracking-widest uppercase border border-red-500 px-4 py-2">
-                {error}
-                </span>
-            </div>
+                <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+                    <span className="text-red-500 font-bold border border-red-500 px-4 py-2 text-xs tracking-widest animate-pulse">
+                        {error}
+                    </span>
+                </div>
             )}
 
             {/* Flash Overlay */}
             <div id="camera-flash" className="absolute inset-0 bg-white opacity-0 transition-opacity duration-75 pointer-events-none mix-blend-overlay z-20" />
             
-            {/* Burst Counter Overlay */}
+            {/* HUD Overlay */}
+            <div className="absolute inset-0 pointer-events-none p-4 flex flex-col justify-between">
+                {/* Top Corners */}
+                <div className="flex justify-between">
+                    <div className="w-4 h-4 border-l-2 border-t-2 border-white/50" />
+                    <div className="w-4 h-4 border-r-2 border-t-2 border-white/50" />
+                </div>
+                
+                {/* Center Crosshair */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center opacity-50">
+                    <div className="w-full h-[1px] bg-red-500" />
+                    <div className="h-full w-[1px] bg-red-500 absolute" />
+                </div>
+
+                {/* Bottom Corners */}
+                <div className="flex justify-between items-end">
+                    <div className="w-4 h-4 border-l-2 border-b-2 border-white/50" />
+                    <div className="text-[9px] text-white/70 tracking-widest">{coordsText}</div>
+                    <div className="w-4 h-4 border-r-2 border-b-2 border-white/50" />
+                </div>
+            </div>
+
+            {/* Burst Counter Big */}
             {burstCount > 0 && (
-                <div className="absolute inset-0 flex items-center justify-center z-10">
-                    <div className="text-8xl font-black text-white/80 tracking-tighter mix-blend-difference">
+                <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/20 backdrop-blur-sm">
+                    <div className="text-9xl font-black text-white italic tracking-tighter">
                         {burstCount}
                     </div>
                 </div>
             )}
-
-            {/* Square Grid Lines (Rule of Thirds) */}
-            <div className="absolute inset-0 pointer-events-none opacity-20">
-                <div className="absolute top-1/3 left-0 w-full h-[1px] bg-white"></div>
-                <div className="absolute top-2/3 left-0 w-full h-[1px] bg-white"></div>
-                <div className="absolute left-1/3 top-0 h-full w-[1px] bg-white"></div>
-                <div className="absolute left-2/3 top-0 h-full w-[1px] bg-white"></div>
-            </div>
-            
-             {/* Center Crosshair */}
-             <div className="absolute top-1/2 left-1/2 w-4 h-[1px] bg-red-500/50 -translate-x-1/2 -translate-y-1/2"></div>
-             <div className="absolute top-1/2 left-1/2 h-4 w-[1px] bg-red-500/50 -translate-x-1/2 -translate-y-1/2"></div>
         </div>
-
       </div>
 
-      {/* Controls */}
-      <div className="h-32 px-8 flex items-center justify-between bg-[#050505]">
-        {/* Gallery */}
-        <button 
-          onClick={onOpenGallery}
-          className="w-16 flex flex-col items-center justify-center gap-2 group"
-        >
-           {lastPhotoThumbnail ? (
-            <div className="w-10 h-10 border border-neutral-700 p-[1px] overflow-hidden">
-              <img src={lastPhotoThumbnail} alt="Archive" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-300" />
-            </div>
-           ) : (
-            <div className="w-10 h-10 border border-neutral-700 bg-neutral-900" />
-           )}
-           <span className="text-[9px] uppercase tracking-[0.2em] text-neutral-500 group-hover:text-white transition-colors">Index</span>
-        </button>
+      {/* Control Deck */}
+      <div className="h-40 bg-[#050505] border-t border-neutral-900 px-6 pb-6 pt-2 flex flex-col gap-4">
+         
+         {/* Toggles */}
+         <div className="flex justify-center gap-8">
+             <button 
+                onClick={() => setIsBnW(false)} 
+                className={`text-[10px] uppercase tracking-widest transition-colors ${!isBnW ? 'text-white border-b border-white' : 'text-neutral-600'}`}
+             >
+                Color
+             </button>
+             <button 
+                onClick={() => setIsBnW(true)} 
+                className={`text-[10px] uppercase tracking-widest transition-colors ${isBnW ? 'text-white border-b border-white' : 'text-neutral-600'}`}
+             >
+                B/W
+             </button>
+         </div>
 
-        {/* Shutter */}
-        <button
-          onClick={takeBurst}
-          disabled={isTakingPhoto}
-          className="relative group active:scale-95 transition-transform duration-100 disabled:opacity-50 disabled:active:scale-100"
-        >
-          {/* Outer Ring */}
-          <div className="w-20 h-20 rounded-full border border-neutral-600 flex items-center justify-center bg-neutral-900">
-             {/* Inner Circle */}
-             <div className="w-16 h-16 rounded-full bg-[#e5e5e5] transition-colors group-active:bg-white flex items-center justify-center shadow-inner">
-                {isTakingPhoto && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
-             </div>
-          </div>
-        </button>
+         {/* Shutter Row */}
+         <div className="flex items-center justify-between">
+            {/* Gallery Access */}
+            <button onClick={onOpenGallery} className="w-12 h-12 flex items-center justify-center border border-neutral-800 hover:border-neutral-600 transition-colors bg-neutral-900">
+                {lastPhotoThumbnail ? (
+                    <img src={lastPhotoThumbnail} className={`w-full h-full object-cover ${isBnW ? 'grayscale' : ''}`} />
+                ) : (
+                    <div className="w-2 h-2 bg-neutral-700 rounded-full" />
+                )}
+            </button>
 
-        {/* Flip */}
-        <button
-          onClick={toggleCamera}
-          className="w-16 flex flex-col items-center justify-center gap-2 group"
-        >
-          <div className="w-10 h-10 border border-neutral-700 flex items-center justify-center text-neutral-300">
-             <span className="text-xs font-bold">2X</span>
-          </div>
-          <span className="text-[9px] uppercase tracking-[0.2em] text-neutral-500 group-hover:text-white transition-colors">Flip</span>
-        </button>
+            {/* Shutter Button */}
+            <button
+                onClick={takeBurst}
+                disabled={isTakingPhoto}
+                className="w-20 h-20 rounded-full border-2 border-neutral-700 flex items-center justify-center group active:scale-95 transition-transform"
+            >
+                <div className={`w-16 h-16 rounded-full transition-colors ${isTakingPhoto ? 'bg-red-600' : 'bg-white group-hover:bg-neutral-200'}`} />
+            </button>
+
+            {/* Flip Cam */}
+            <button onClick={toggleCamera} className="w-12 h-12 flex items-center justify-center border border-neutral-800 hover:border-neutral-600 transition-colors text-xs font-bold text-neutral-400 hover:text-white">
+                FLIP
+            </button>
+         </div>
       </div>
 
       <canvas ref={canvasRef} className="hidden" />

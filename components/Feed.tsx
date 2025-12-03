@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Post } from '../types';
 import { getFeed } from '../services/socialService';
-import { Heart, MessageCircle, Share2, MoreHorizontal, Loader2 } from 'lucide-react';
+import { Loader2, Heart, MessageSquare } from 'lucide-react';
 
 export const Feed: React.FC = () => {
   const [posts, setPosts] = useState<Post[]>([]);
@@ -18,19 +18,23 @@ export const Feed: React.FC = () => {
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center bg-[#050505]">
-        <Loader2 className="animate-spin text-neutral-600" />
+        <div className="flex flex-col items-center gap-4">
+             <Loader2 className="animate-spin text-white" />
+             <span className="text-[10px] uppercase tracking-widest text-neutral-500">Loading Journal...</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-[#050505] pb-24">
-      {/* Feed Header */}
-      <div className="h-14 flex items-center justify-center border-b border-neutral-900 sticky top-0 bg-[#050505]/90 backdrop-blur z-20">
-        <h1 className="text-sm font-bold tracking-widest uppercase">HippoCam</h1>
+    <div className="h-full overflow-y-auto bg-[#050505] pb-24 font-mono">
+      {/* Header */}
+      <div className="h-14 flex items-center justify-between px-4 border-b border-neutral-900 sticky top-0 bg-[#050505]/95 backdrop-blur z-20">
+        <h1 className="text-xs font-bold tracking-widest uppercase text-white">Travel Journal</h1>
+        <div className="w-2 h-2 bg-green-500 rounded-full shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
       </div>
 
-      <div className="flex flex-col gap-8 py-4">
+      <div className="flex flex-col">
         {posts.map(post => (
           <FeedItem key={post.id} post={post} />
         ))}
@@ -59,84 +63,69 @@ const FeedItem: React.FC<{ post: Post }> = ({ post }) => {
     };
   }, [isPlaying, post.frameUrls]);
 
-  // CSS for positioning the playback overlay over the 2x2 grid on the poster
-  // Based on geminiService layout logic: Ratio 2.24
-  const overlayStyle: React.CSSProperties = {
-      position: 'absolute',
-      left: '0',
-      top: '0',
-      marginLeft: '4.46%',    // 0.1 / 2.24
-      marginTop: '13.39%',    // 0.3 / 2.24 (Margin top % is relative to width)
-      width: '91.07%',        // 2.04 / 2.24
-      aspectRatio: '1/1',
-      pointerEvents: 'none'
-  };
-
-  const playbackImage = post.frameUrls[currentFrameIndex];
+  const activeImage = isPlaying && post.frameUrls.length > 0 
+    ? post.frameUrls[currentFrameIndex] 
+    : post.mainImageUrl;
 
   return (
-    <div className="flex flex-col">
-      {/* Post Header */}
-      <div className="px-4 py-3 flex items-center justify-between">
+    <div className="flex flex-col border-b border-neutral-900 mb-8 pb-8">
+      
+      {/* 1. Header Block (Technical Data) */}
+      <div className="px-4 py-4 flex justify-between items-start">
         <div className="flex items-center gap-3">
-          <img src={post.user.avatarUrl} alt="avatar" className="w-8 h-8 rounded-full bg-neutral-800 object-cover" />
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-white">{post.user.username}</span>
-            <span className="text-[10px] text-neutral-500 uppercase tracking-wider">{post.locationName}</span>
-          </div>
+            <div className="w-8 h-8 bg-neutral-900 border border-neutral-800">
+                <img src={post.user.avatarUrl} alt="Avatar" className="w-full h-full object-cover grayscale" />
+            </div>
+            <div className="flex flex-col">
+                <span className="text-xs font-bold uppercase text-white tracking-wider">{post.user.username}</span>
+                <span className="text-[9px] text-neutral-500 uppercase tracking-widest">{new Date(post.timestamp).toLocaleTimeString()}</span>
+            </div>
         </div>
-        <button className="text-neutral-500">
-          <MoreHorizontal size={16} />
-        </button>
+        <div className="flex flex-col items-end">
+            <span className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold">{post.locationName}</span>
+            <span className="text-[8px] text-neutral-600 font-mono tracking-widest">{post.coordinates || "NO GPS DATA"}</span>
+        </div>
       </div>
 
-      {/* Image Stage */}
+      {/* 2. Image Block (Full Bleed / Hard Edges) */}
       <div 
-        className="w-full relative cursor-pointer"
+        className="w-full relative cursor-pointer group bg-[#0a0a0a] border-y border-neutral-900"
         onClick={() => setIsPlaying(!isPlaying)}
       >
-        <img src={post.mainImageUrl} alt="Post" className="w-full h-auto bg-[#111]" />
+        <img 
+            src={activeImage} 
+            alt="Post" 
+            className={`w-full h-auto object-contain transition-opacity duration-100 ${isPlaying ? 'opacity-100' : 'opacity-90'}`} 
+        />
         
-        {/* Playback Overlay */}
-        {isPlaying && playbackImage && (
-            <div style={overlayStyle} className="z-10 bg-black">
-                <img 
-                    src={playbackImage} 
-                    alt="Playback Frame"
-                    className="w-full h-full object-cover"
-                />
+        {/* GIF Indicator */}
+        {post.frameUrls.length > 0 && !isPlaying && (
+            <div className="absolute top-4 right-4 bg-black/50 backdrop-blur px-2 py-1 border border-white/20">
+                <span className="text-[9px] uppercase tracking-widest text-white">Tap for Motion</span>
             </div>
         )}
       </div>
 
-      {/* Actions */}
-      <div className="px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button className={`flex items-center gap-1 ${post.likedByMe ? 'text-red-500' : 'text-white'}`}>
-            <Heart size={20} fill={post.likedByMe ? 'currentColor' : 'none'} />
-          </button>
-          <button className="text-white">
-            <MessageCircle size={20} />
-          </button>
-          <button className="text-white">
-            <Share2 size={20} />
-          </button>
-        </div>
-        {post.frameUrls.length > 0 && (
-            <div className={`text-[9px] uppercase tracking-widest px-2 py-1 border ${isPlaying ? 'border-red-500 text-red-500' : 'border-neutral-700 text-neutral-500'}`}>
-                {isPlaying ? 'Playing' : 'GIF'}
-            </div>
-        )}
-      </div>
-
-      {/* Caption */}
-      <div className="px-4 pb-4">
-         <div className="text-sm text-neutral-400 leading-snug">
-            <span className="text-white font-bold mr-2">{post.user.username}</span>
-            {post.caption}
+      {/* 3. Data/Caption Block */}
+      <div className="px-4 pt-4 flex flex-col gap-4">
+         
+         {/* Action Bar (Minimal) */}
+         <div className="flex items-center gap-6">
+            <button className={`flex items-center gap-2 text-[10px] uppercase tracking-widest hover:text-white transition-colors ${post.likedByMe ? 'text-white' : 'text-neutral-500'}`}>
+                <Heart size={14} fill={post.likedByMe ? "white" : "none"} />
+                {post.likes > 0 ? post.likes : 'Like'}
+            </button>
+            <button className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-neutral-500 hover:text-white transition-colors">
+                <MessageSquare size={14} />
+                Comment
+            </button>
          </div>
-         <div className="text-[10px] text-neutral-600 mt-2 uppercase tracking-widest">
-            {new Date(post.timestamp).toLocaleDateString()}
+
+         {/* Caption Typewriter */}
+         <div className="border-l-2 border-neutral-800 pl-4 py-1">
+             <p className="text-sm text-neutral-300 font-sans leading-relaxed">
+                {post.caption}
+             </p>
          </div>
       </div>
     </div>

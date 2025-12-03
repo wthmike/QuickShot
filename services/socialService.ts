@@ -45,6 +45,7 @@ let FEED_POSTS: Post[] = [
         frameUrls: [], // No animation for mock placeholders
         caption: 'Late night walks in Shibuya.',
         locationName: 'TOKYO, JAPAN',
+        coordinates: '35.6762°N, 139.6503°E',
         timestamp: Date.now() - 3600000,
         likes: 42,
         likedByMe: false
@@ -57,6 +58,7 @@ let FEED_POSTS: Post[] = [
         frameUrls: [],
         caption: 'First roll of the summer.',
         locationName: 'KYOTO, JAPAN',
+        coordinates: '35.0116°N, 135.7681°E',
         timestamp: Date.now() - 86400000,
         likes: 89,
         likedByMe: true
@@ -69,26 +71,40 @@ export const getFeed = async (): Promise<Post[]> => {
     return [...FEED_POSTS].sort((a, b) => b.timestamp - a.timestamp);
 };
 
-export const getMyProfile = async (): Promise<{ user: User, posts: Post[] }> => {
+export const getMyProfile = async (userId?: string): Promise<{ user: User, posts: Post[] }> => {
     await new Promise(r => setTimeout(r, 400));
-    const myPosts = FEED_POSTS.filter(p => p.userId === CURRENT_USER.id);
+    
+    // If no specific userId passed, default to hardcoded mock user
+    const targetId = userId || CURRENT_USER.id;
+    
+    // In a real app, we'd fetch the user details from DB.
+    // Here, if it matches CURRENT_USER, use that. If it matches a mock, use that.
+    // If it's a dynamic local user (mock mode), we might not have the user object stored in MOCK_USERS,
+    // but the Profile component usually passes the user object down.
+    
+    const myPosts = FEED_POSTS.filter(p => p.userId === targetId);
+    
+    // Note: In real app we return the user object too. 
+    // For now we just return CURRENT_USER if we don't have a better one, 
+    // relying on the component to hold the real user state.
     return { user: CURRENT_USER, posts: myPosts };
 };
 
 // Convert a local developed Photo into a Public Post
-export const uploadPost = async (photo: Photo): Promise<void> => {
+export const uploadPost = async (photo: Photo, author: User = CURRENT_USER): Promise<void> => {
     await new Promise(r => setTimeout(r, 1500)); // Simulate upload
     
     if (!photo.processedUrl) throw new Error("Cannot upload undeveloped photo");
 
     const newPost: Post = {
         id: `post_${Date.now()}`,
-        userId: CURRENT_USER.id,
-        user: CURRENT_USER,
+        userId: author.id,
+        user: author,
         mainImageUrl: photo.processedUrl,
         frameUrls: photo.processedFrames || photo.frames || [],
         caption: photo.caption || '',
-        locationName: 'POSTED VIA HIPPOCAM', // In real app, extract from photo metadata
+        locationName: photo.locationName || 'UNKNOWN LOCATION', // Use saved location from photo
+        coordinates: photo.coordinates,
         timestamp: Date.now(),
         likes: 0,
         likedByMe: false

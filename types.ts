@@ -8,6 +8,8 @@ export interface Photo {
   caption?: string;
   frames?: string[];
   processedFrames?: string[];
+  locationName?: string;
+  coordinates?: string;
 }
 
 export interface User {
@@ -28,6 +30,7 @@ export interface Post {
   frameUrls: string[]; // For GIF playback
   caption: string;
   locationName: string;
+  coordinates?: string;
   timestamp: number;
   likes: number;
   likedByMe: boolean;
