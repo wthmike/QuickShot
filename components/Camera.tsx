@@ -30,8 +30,9 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       const constraints: MediaStreamConstraints = {
         video: {
           facingMode: facingMode,
-          width: { ideal: 2160 },
-          height: { ideal: 2160 }, // Request square-ish, though cameras usually give 4:3
+          // OPTIMIZATION: Request 1080p instead of 4K to save memory on mobile
+          width: { ideal: 1920 },
+          height: { ideal: 1920 }, 
           aspectRatio: { ideal: 1 }
         },
         audio: false,
@@ -126,10 +127,16 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
     const startX = (video.videoWidth - minDim) / 2;
     const startY = (video.videoHeight - minDim) / 2;
 
-    canvas.width = minDim;
-    canvas.height = minDim;
+    // OPTIMIZATION: Limit capture size to 1080px.
+    // This dramatically reduces memory usage (RAM) and prevents OOM crashes on iOS/Android
+    // when storing 4 consecutive burst shots + processing them.
+    const MAX_CAPTURE_SIZE = 1080;
+    const finalDim = Math.min(minDim, MAX_CAPTURE_SIZE);
 
-    const ctx = canvas.getContext('2d');
+    canvas.width = finalDim;
+    canvas.height = finalDim;
+
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
 
     if (facingMode === 'user') {
@@ -137,8 +144,8 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       ctx.scale(-1, 1);
     }
 
-    // Draw single frame (Instant Shutter)
-    ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, minDim, minDim);
+    // Draw and downscale in one step
+    ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, finalDim, finalDim);
 
     // Trigger visual flash
     const flashEl = document.getElementById('camera-flash');
@@ -147,7 +154,8 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       setTimeout(() => flashEl.style.opacity = '0', 50);
     }
 
-    return canvas.toDataURL('image/jpeg', 0.95);
+    // Use slightly lower quality (0.85) to reduce base64 string size for better performance
+    return canvas.toDataURL('image/jpeg', 0.85);
   };
 
   const takeBurst = async () => {
@@ -165,6 +173,7 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
         const frame = await captureFrame();
         if (frame) shots.push(frame);
         
+        // Small delay between shots, but don't delay after the last one
         if (i < BURST_SIZE) {
             await new Promise(r => setTimeout(r, DELAY_MS));
         }
@@ -187,7 +196,7 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
 
     } catch (e) {
         console.error("Burst failed", e);
-        setError("BURST FAILED");
+        setError("MEM ERROR - RETRY");
     } finally {
         setIsTakingPhoto(false);
         setBurstCount(0);
