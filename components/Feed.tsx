@@ -33,22 +33,23 @@ export const Feed: React.FC<FeedProps> = ({ onNavigateProfile }) => {
     <div className="h-full overflow-y-auto bg-[#050505] pb-24 scrollbar-hide">
       {/* Editorial Header */}
       <div className="pt-14 pb-6 px-5 sticky top-0 bg-[#050505]/95 backdrop-blur-xl z-30 border-b border-neutral-900 transition-all duration-500">
-        <div className="flex flex-col w-full">
+        <div className="flex flex-col w-full gap-2">
             {/* Top Meta Line - Swiss Grid Style */}
-            <div className="flex justify-between items-center mb-2 border-b border-neutral-800 pb-3">
+            <div className="flex items-center gap-4 border-b border-neutral-800 pb-2">
                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-white"></div>
+                    <div className="w-1.5 h-1.5 bg-white"></div>
                     <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-neutral-500">
                         Global Feed
                     </span>
                  </div>
+                 <span className="text-[10px] text-neutral-700">|</span>
                  <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-neutral-500">
                      Est. {new Date().getFullYear()}
                  </span>
             </div>
 
             {/* Title */}
-            <div className="mt-1">
+            <div>
                 <h1 className="text-6xl font-black tracking-tighter uppercase leading-[0.8] text-white">
                     Chronicle
                 </h1>

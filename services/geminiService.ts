@@ -43,11 +43,16 @@ export async function stitchBurst(images: string[]): Promise<string> {
                 imgObjects.map(img => resizeImage(img, TARGET_SIZE))
             );
 
-            const size = resizedCanvases[0].width; // Assuming square
+            // Layout Logic:
+            // The grid is constructed based on the Tile Size (S).
+            // Width = 2*S + Gap + 2*Padding.
+            // P = 0.05 * S
+            // G = 0.02 * S
+            // Total Width Factor = 2 + 0.02 + 0.1 = 2.12
             
-            // Dynamic Layout: 2x2 Grid (Clean)
-            const padding = Math.floor(size * 0.05); // Small outer matte
-            const gap = Math.floor(size * 0.02);     // Tiny gap between grid items
+            const size = resizedCanvases[0].width; // S
+            const padding = Math.floor(size * 0.05); // P
+            const gap = Math.floor(size * 0.02);     // G
             
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -57,9 +62,7 @@ export async function stitchBurst(images: string[]): Promise<string> {
               return;
             }
 
-            // Width: Padding + Image + Gap + Image + Padding
             const gridWidth = (size * 2) + gap + (padding * 2);
-            // Height: Same (Square output)
             const gridHeight = (size * 2) + gap + (padding * 2);
             
             canvas.width = gridWidth;
@@ -93,39 +96,36 @@ export async function stitchBurst(images: string[]): Promise<string> {
   });
 }
 
-// Helper to apply directional motion blur to a specific region
-function applyMotionBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-    // To simulate motion blur we draw the region multiple times with opacity and offset
-    const steps = 6; // Reduced steps for performance
-    const distance = 8 + Math.random() * 8; // Subtle blur
-    const angle = (Math.random() - 0.5) * Math.PI; // Random angle between -90 and 90
+// Helper to apply static blur to a specific region without moving pixels (no shaking)
+function applyRegionBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+    // 1. Copy the region to a temp canvas
+    // ROUNDING is crucial here. If we draw at 0.5px, it will blur/shift the pixels.
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    const iw = Math.floor(w);
+    const ih = Math.floor(h);
 
-    // Capture the region
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = w;
-    tempCanvas.height = h;
+    tempCanvas.width = iw;
+    tempCanvas.height = ih;
     const tCtx = tempCanvas.getContext('2d');
     if (!tCtx) return;
     
-    tCtx.drawImage(ctx.canvas, x, y, w, h, 0, 0, w, h);
+    tCtx.drawImage(ctx.canvas, ix, iy, iw, ih, 0, 0, iw, ih);
 
-    // Apply blur to the region on the main canvas
+    // 2. Draw it back onto the main canvas with a blur filter
     ctx.save();
-    // Clip to the region so we don't blur over borders
     ctx.beginPath();
-    ctx.rect(x, y, w, h);
-    ctx.clip();
+    ctx.rect(ix, iy, iw, ih);
+    ctx.clip(); // Ensure we don't effect neighboring pixels too much
 
-    ctx.globalAlpha = 0.25; // Higher opacity, fewer steps = sharper blur
+    // REDUCED BLUR: Range 2 to 4.5px (Original was 3-6)
+    const blurAmount = 2 + Math.random() * 2.5;
+    ctx.filter = `blur(${blurAmount}px)`;
     
-    // Draw multiple times shifted
-    for (let i = 0; i < steps; i++) {
-        const progress = (i / (steps - 1)) - 0.5; // -0.5 to 0.5
-        const offsetX = Math.cos(angle) * distance * progress;
-        const offsetY = Math.sin(angle) * distance * progress;
-        
-        ctx.drawImage(tempCanvas, 0, 0, w, h, x + offsetX, y + offsetY, w, h);
-    }
+    // Draw exactly at same coordinates - NO SHIFT/SHAKE
+    // We draw the tempCanvas (which is the captured region) back into the main canvas at x, y
+    ctx.drawImage(tempCanvas, 0, 0, iw, ih, ix, iy, iw, ih);
     
     ctx.restore();
 }
@@ -161,31 +161,38 @@ export async function processImageNatural(base64Image: string, filterType: Filte
         // --- STEP 1: BASE RENDER ---
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
-        // --- STEP 1.5: RANDOM MOTION BLUR (Global) ---
-        // We want to blur 2 random photos out of the 4.
-        const padding = canvas.width * 0.05;
-        const gap = canvas.width * 0.02;
-        const cellSize = (canvas.width - (padding * 2) - gap) / 2;
+        // --- CALC GEOMETRY (Percentage Based to fix Shaking) ---
+        // Width = 2.12 units.
+        // Size = 1.0 unit.
+        // Padding = 0.05 unit.
+        // Gap = 0.02 unit.
+        // S_px = Width / 2.12
         
+        const S = canvas.width / 2.12; 
+        const uP = S * 0.05;
+        const uG = S * 0.02;
+        
+        // We calculate these as floats, but will FLOOR them during extraction/blur
         const quadrants = [
-            { x: padding, y: padding, w: cellSize, h: cellSize }, // Top Left
-            { x: padding + cellSize + gap, y: padding, w: cellSize, h: cellSize }, // Top Right
-            { x: padding, y: padding + cellSize + gap, w: cellSize, h: cellSize }, // Bottom Left
-            { x: padding + cellSize + gap, y: padding + cellSize + gap, w: cellSize, h: cellSize } // Bottom Right
+            { x: uP, y: uP, w: S, h: S }, // Top Left
+            { x: uP + S + uG, y: uP, w: S, h: S }, // Top Right
+            { x: uP, y: uP + S + uG, w: S, h: S }, // Bottom Left
+            { x: uP + S + uG, y: uP + S + uG, w: S, h: S } // Bottom Right
         ];
 
-        // Pick 2 distinct random indices
+        // --- STEP 1.5: RANDOM REGION BLUR (No Shake) ---
+        // We want to blur 2 random photos out of the 4 to create depth/focus shift in GIF.
+        // Pick 2 distinct random indices to apply blur to
         const indices = [0, 1, 2, 3].sort(() => 0.5 - Math.random()).slice(0, 2);
         
         indices.forEach(idx => {
             const q = quadrants[idx];
-            applyMotionBlur(ctx, q.x, q.y, q.w, q.h);
+            applyRegionBlur(ctx, q.x, q.y, q.w, q.h);
         });
 
 
         // --- STEP 2: APPLY FILTER LOOK ---
-        // Strategy: We copy the current canvas (with blur) to a temp canvas,
-        // then draw it back onto the main canvas with a filter applied.
+        // We take the current state (with blurs) and apply color grading.
         
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
@@ -197,6 +204,7 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             tCtx.drawImage(canvas, 0, 0);
             
             // Prepare main canvas for filtered draw
+            ctx.save();
             ctx.globalCompositeOperation = 'source-over';
             let overlayColor: string | null = null;
             let overlayMode: GlobalCompositeOperation = 'source-over';
@@ -215,16 +223,16 @@ export async function processImageNatural(base64Image: string, filterType: Filte
                 overlayColor = 'rgba(255, 200, 150, 0.08)'; 
 
             } else if (filterType === 'WILLIAM_400') {
-                // B&W 1: WILLIAM (The Hippo) STANDARD MONO
+                // B&W 1: WILLIAM STANDARD MONO
                 ctx.filter = 'grayscale(100%) contrast(1.1) brightness(1.0)';
-                overlayMode = 'multiply';
-                overlayColor = 'rgba(20, 20, 25, 0.05)'; 
+                // No overlay color for B&W to prevent tinting
+                overlayColor = null;
 
             } else if (filterType === 'WILLIAM_H') {
                 // B&W 2: WILLIAM HIGH CONTRAST
                 ctx.filter = 'grayscale(100%) contrast(1.45) brightness(1.1)';
+                overlayColor = null;
             } else {
-                // Fallback / Standard
                 ctx.filter = 'none';
             }
 
@@ -234,19 +242,17 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             // Reset Filter
             ctx.filter = 'none';
 
-            // Apply Tint/Overlay if needed
+            // Apply Tint/Overlay if needed (Only for color films)
             if (overlayColor) {
                 ctx.globalCompositeOperation = overlayMode;
                 ctx.fillStyle = overlayColor;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.globalCompositeOperation = 'source-over';
             }
+            ctx.restore();
         }
 
-        // --- STEP 3: GRAIN & FINISHING (Common to all, maybe varied intensity) ---
-        
-        // Reset composite for grain
-        ctx.globalCompositeOperation = 'overlay';
+        // --- STEP 3: GRAIN ---
+        // Grain can be applied to both color and B&W.
         const grainCanvas = document.createElement('canvas');
         grainCanvas.width = 128; 
         grainCanvas.height = 128;
@@ -260,17 +266,18 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             let grainOpacity = 30;
 
             if (filterType === 'HIPPO_800') {
-                grainIntensity = 45; // More grain for 800
+                grainIntensity = 45;
                 grainOpacity = 40;
             } else if (filterType === 'WILLIAM_400') {
-                grainIntensity = 50; // B&W generally takes grain better
+                grainIntensity = 50; 
                 grainOpacity = 50;
             } else if (filterType === 'WILLIAM_H') {
-                grainIntensity = 60; // High contrast + High Grain
+                grainIntensity = 60; 
                 grainOpacity = 60;
             }
 
             for (let i = 0; i < data.length; i += 4) {
+                // Monochromatic grain
                 const val = 120 + Math.random() * grainIntensity; 
                 data[i] = val;     
                 data[i + 1] = val; 
@@ -281,15 +288,17 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             
             const pattern = ctx.createPattern(grainCanvas, 'repeat');
             if (pattern) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'overlay';
                 ctx.fillStyle = pattern;
                 ctx.globalAlpha = 0.6; 
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.globalAlpha = 1.0;
+                ctx.restore();
             }
         }
 
-        // Optical Softness / Glow (Bloom) - Only for color or high contrast
-        // Reduced for William H to keep it sharp/harsh
+        // --- STEP 4: GLOW (Bloom) ---
+        // Only for color or mild B&W, disable for High Contrast B&W to keep it sharp
         if (filterType !== 'WILLIAM_H') {
             const glowCanvas = document.createElement('canvas');
             glowCanvas.width = canvas.width / 2;
@@ -300,24 +309,55 @@ export async function processImageNatural(base64Image: string, filterType: Filte
                 gCtx.globalAlpha = 0.2; 
                 gCtx.drawImage(canvas, 0, 0, glowCanvas.width, glowCanvas.height);
                 
+                ctx.save();
                 ctx.globalCompositeOperation = 'screen';
                 ctx.drawImage(glowCanvas, 0, 0, canvas.width, canvas.height);
+                ctx.restore();
             }
         }
 
-        // Reset
-        ctx.globalCompositeOperation = 'source-over';
+        // --- STEP 5: FINAL B&W ENFORCEMENT ---
+        // We do this absolutely last to ensure NO color leaks from Glow, Overlay, or Grain.
+        const isBW = filterType.includes('WILLIAM');
+        
+        if (isBW) {
+            const postProcessSnapshot = document.createElement('canvas');
+            postProcessSnapshot.width = canvas.width;
+            postProcessSnapshot.height = canvas.height;
+            const ppCtx = postProcessSnapshot.getContext('2d');
+            
+            if (ppCtx) {
+                ppCtx.drawImage(canvas, 0, 0);
+                
+                ctx.save();
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.filter = 'grayscale(100%)'; // Hard enforce
+                ctx.drawImage(postProcessSnapshot, 0, 0);
+                ctx.restore();
+            }
+        }
 
-        // --- STEP 4: EXTRACT FRAMES ---
-        // Extracting frames from the FINAL processed image so they share the look
+        // --- STEP 6: EXTRACT FRAMES ---
+        // Extracting frames from the FINAL processed image
         const processedFrames: string[] = [];
+        
         for (const q of quadrants) {
+            // FLOORING coordinates to align pixels prevents shaking in GIF
+            const x = Math.floor(q.x);
+            const y = Math.floor(q.y);
+            const w = Math.floor(q.w);
+            const h = Math.floor(q.h);
+
             const tempC = document.createElement('canvas');
-            tempC.width = q.w;
-            tempC.height = q.h;
+            tempC.width = w;
+            tempC.height = h;
             const tempCtx = tempC.getContext('2d');
             if (tempCtx) {
-                tempCtx.drawImage(canvas, q.x, q.y, q.w, q.h, 0, 0, q.w, q.h);
+                // Safety: Re-apply grayscale here to guard against extraction quirks
+                if (isBW) {
+                    tempCtx.filter = 'grayscale(100%)';
+                }
+                tempCtx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
                 processedFrames.push(tempC.toDataURL('image/webp', 0.85));
             }
         }
