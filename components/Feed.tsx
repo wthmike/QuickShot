@@ -67,21 +67,21 @@ const FeedPoster: React.FC<{ post: Post, isMe: boolean }> = ({ post, isMe }) => 
     ? post.frameUrls[currentFrameIndex] 
     : post.mainImageUrl;
 
-  const dateStr = new Date(post.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+  const dateStr = new Date(post.timestamp).toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
   
   const downloadPoster = async () => {
     setDownloading(true);
     try {
         const canvas = document.createElement('canvas');
-        const W = 1200;
-        const H = 1600;
+        const W = 1080; // Standard Portrait width
+        const H = 1920; // 9:16 aspect ratio
         canvas.width = W;
         canvas.height = H;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // 1. Paper Background (Off-white Swiss style)
-        ctx.fillStyle = '#EBEBEB';
+        // 1. Background - Dark Theme
+        ctx.fillStyle = '#050505';
         ctx.fillRect(0, 0, W, H);
 
         // 2. Load Image
@@ -93,25 +93,44 @@ const FeedPoster: React.FC<{ post: Post, isMe: boolean }> = ({ post, isMe }) => 
             img.src = post.mainImageUrl;
         });
 
-        // 3. Draw Image (Top Section, with padding)
-        const margin = 80;
-        const imgSize = W - (margin * 2);
-        // Square or native aspect ratio
-        ctx.drawImage(img, margin, margin, imgSize, imgSize);
+        // Layout Config
+        const margin = 60;
+        
+        // --- HEADER STAMPS ---
+        ctx.fillStyle = '#525252'; // Neutral 600
+        ctx.font = 'bold 24px "DM Sans", sans-serif';
+        ctx.fillText(`LOG NO. ${post.logIndex || 1}`, margin, 100);
+        
+        const archiveText = "SIGHTINGS ARCHIVE";
+        const archiveWidth = ctx.measureText(archiveText).width;
+        ctx.fillText(archiveText, W - margin - archiveWidth, 100);
 
-        // 4. Typography - Swiss Editorial Style
-        ctx.fillStyle = '#111111';
+        // --- IMAGE ---
+        const imgWidth = W - (margin * 2);
+        const imgHeight = imgWidth; // Square
+        const imgY = 160;
         
-        // Location Headline (Massive)
-        ctx.font = '900 130px "DM Sans", sans-serif';
-        const locationName = post.locationName || "UNKNOWN";
+        ctx.drawImage(img, margin, imgY, imgWidth, imgHeight);
         
-        // Wrap text logic if too long
+        // Image Border
+        ctx.strokeStyle = '#262626'; // Neutral 800
+        ctx.lineWidth = 2;
+        ctx.strokeRect(margin, imgY, imgWidth, imgHeight);
+
+        // --- TYPOGRAPHY ---
+        let yPos = imgY + imgHeight + 100;
+        
+        // Location Headline - MASSIVE & WHITE
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '900 110px "DM Sans", sans-serif';
+        const locationName = (post.locationName || "SOMEWHERE").toUpperCase();
+        
+        // Text Wrap Logic for Location
         const words = locationName.split(' ');
         let line = '';
-        let yPos = margin + imgSize + 140;
-        const lineHeight = 130;
+        const lineHeight = 110;
 
+        // Draw location title
         for(let n = 0; n < words.length; n++) {
             const testLine = line + words[n] + ' ';
             const metrics = ctx.measureText(testLine);
@@ -125,24 +144,27 @@ const FeedPoster: React.FC<{ post: Post, isMe: boolean }> = ({ post, isMe }) => 
         }
         ctx.fillText(line, margin, yPos);
 
-        // Separator Line
-        yPos += 60;
-        ctx.fillStyle = '#000';
-        ctx.fillRect(margin, yPos, W - (margin * 2), 4);
+        yPos += 50;
 
-        // Metadata Grid (Coordinates + Date)
+        // Divider Line
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(margin, yPos, W - (margin*2), 2);
+        
         yPos += 60;
+
+        // Coordinates & Date Row
+        ctx.fillStyle = '#a1a1aa'; // Neutral 400
         ctx.font = '500 32px "DM Sans", sans-serif';
         ctx.fillText(post.coordinates || "00.00°N, 00.00°E", margin, yPos);
         
         const dateWidth = ctx.measureText(dateStr).width;
         ctx.fillText(dateStr, W - margin - dateWidth, yPos);
 
-        // Caption (Serif Italic)
+        // --- CAPTION ---
         if (post.caption) {
-            yPos += 120;
-            ctx.font = 'italic 400 42px "Libre Baskerville", serif';
-            ctx.fillStyle = '#333';
+            yPos += 100;
+            ctx.fillStyle = '#e5e5e5';
+            ctx.font = 'italic 400 48px "Libre Baskerville", serif';
             
             // Wrap caption
             const captionWords = post.caption.split(' ');
@@ -153,7 +175,7 @@ const FeedPoster: React.FC<{ post: Post, isMe: boolean }> = ({ post, isMe }) => 
                 if (metrics.width > (W - margin*2) && n > 0) {
                     ctx.fillText(captionLine, margin, yPos);
                     captionLine = captionWords[n] + ' ';
-                    yPos += 60; // Caption line height
+                    yPos += 70; 
                 } else {
                     captionLine = testLine;
                 }
@@ -162,9 +184,9 @@ const FeedPoster: React.FC<{ post: Post, isMe: boolean }> = ({ post, isMe }) => 
         }
 
         // Trigger Download
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
         const link = document.createElement('a');
-        link.download = `LOG_${post.logIndex}_${post.locationName.replace(/\s+/g, '_')}.jpg`;
+        link.download = `SIGHTING_${post.logIndex}_${post.locationName.replace(/\s+/g, '_')}.jpg`;
         link.href = dataUrl;
         link.click();
 
