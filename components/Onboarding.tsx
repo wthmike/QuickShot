@@ -201,10 +201,14 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
                         className="w-full bg-transparent border-b border-neutral-800 py-4 text-3xl font-light text-center focus:border-neutral-500 outline-none transition-all placeholder-neutral-900 text-white"
                         placeholder="username"
                         spellCheck={false}
+                        enterKeyHint="next"
                     />
-                    <div className="mt-12 opacity-0 animate-in fade-in delay-500 duration-1000 fill-mode-forwards">
-                        <button onClick={handleNext} className="text-neutral-600 hover:text-white transition-colors">
-                            <ArrowRight size={24} strokeWidth={1} />
+                    <div className="mt-8">
+                        <button 
+                            onClick={handleNext}
+                            className="h-12 px-10 border border-neutral-800 text-white hover:bg-white hover:text-black hover:border-white transition-all uppercase text-xs tracking-[0.2em]"
+                        >
+                            Next
                         </button>
                     </div>
                 </div>
@@ -240,13 +244,17 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
                             onKeyDown={handleKeyDown}
                             className="w-full bg-transparent text-center text-sm uppercase tracking-widest text-neutral-400 focus:text-white outline-none placeholder-neutral-800"
                             placeholder="Display Name (Optional)"
+                            enterKeyHint="next"
                         />
                     </div>
 
-                    <div className="mt-12 flex gap-8 items-center">
-                        <button onClick={() => setStep(1)} className="text-neutral-700 hover:text-white text-[10px] uppercase tracking-widest">Back</button>
-                        <button onClick={handleNext} className="text-neutral-400 hover:text-white transition-colors">
-                            <ArrowRight size={24} strokeWidth={1} />
+                    <div className="mt-8 flex gap-4 items-center">
+                        <button onClick={() => setStep(1)} className="h-12 px-6 text-neutral-600 hover:text-white text-[10px] uppercase tracking-widest">Back</button>
+                        <button 
+                            onClick={handleNext} 
+                            className="h-12 px-10 border border-neutral-800 text-white hover:bg-white hover:text-black hover:border-white transition-all uppercase text-xs tracking-[0.2em]"
+                        >
+                            Next
                         </button>
                     </div>
                 </div>
@@ -267,6 +275,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ userId, email, onComplet
                         className="w-full bg-transparent border-l border-neutral-800 pl-6 py-2 text-xl font-light text-neutral-300 focus:text-white focus:border-neutral-600 outline-none transition-colors placeholder-neutral-800 resize-none h-32 leading-relaxed"
                         placeholder="Where are you traveling?"
                         autoFocus
+                        enterKeyHint="done"
                     />
                     
                     <div className="w-full flex justify-end mt-2">
