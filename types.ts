@@ -5,6 +5,8 @@ export interface Photo {
   timestamp: number;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   caption?: string;
+  frames?: string[];
+  processedFrames?: string[];
 }
 
 export enum CameraMode {

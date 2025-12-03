@@ -16,6 +16,10 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
   const [isTakingPhoto, setIsTakingPhoto] = useState(false);
   const [burstCount, setBurstCount] = useState(0); // 0 = idle, 1-4 = capturing
   const [error, setError] = useState<string | null>(null);
+  
+  // State for location
+  const [coordsText, setCoordsText] = useState<string>("00.00°N, 00.00°W");
+  const [locationName, setLocationName] = useState<string>("UNKNOWN LOCATION");
 
   const startCamera = useCallback(async () => {
     try {
@@ -47,6 +51,57 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
 
   useEffect(() => {
     startCamera();
+    
+    // Fetch location and reverse geocode
+    if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                const { latitude, longitude } = position.coords;
+                const latDir = latitude >= 0 ? 'N' : 'S';
+                const lonDir = longitude >= 0 ? 'E' : 'W';
+                // Format: 34.05°N, 118.24°W
+                const formattedCoords = `${Math.abs(latitude).toFixed(2)}°${latDir}, ${Math.abs(longitude).toFixed(2)}°${lonDir}`;
+                setCoordsText(formattedCoords);
+
+                // Attempt Reverse Geocoding
+                try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
+                        headers: {
+                            'User-Agent': 'HippoCam/1.0'
+                        }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        const addr = data.address;
+                        // Construct "City, State" or similar
+                        const city = addr.city || addr.town || addr.village || addr.hamlet || addr.suburb;
+                        const state = addr.state || addr.country;
+                        
+                        if (city && state) {
+                            setLocationName(`${city}, ${state}`.toUpperCase());
+                        } else if (state) {
+                            setLocationName(state.toUpperCase());
+                        } else {
+                            setLocationName("EARTH");
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Reverse geocode failed", e);
+                    // Fallback to coords if name fails, or just keep UNKNOWN
+                    // But usually we just keep "UNKNOWN LOCATION" or set it to coords
+                    // Let's stick with a technical fallback
+                    setLocationName("LOCATION SIGNAL LOCK");
+                }
+            },
+            (err) => {
+                console.warn("Geolocation denied or error", err);
+                setCoordsText("NO SIGNAL");
+                setLocationName("OFF GRID");
+            },
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+        );
+    }
+
     return () => {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
@@ -117,11 +172,13 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
 
       // Stitch
       if (shots.length === BURST_SIZE) {
-         const stitchedUrl = await stitchBurst(shots);
+         // Pass current location data to stitcher
+         const stitchedUrl = await stitchBurst(shots, coordsText, locationName);
          
          const newPhoto: Photo = {
             id: crypto.randomUUID(),
             originalUrl: stitchedUrl,
+            frames: shots, // Store raw frames for playback
             timestamp: Date.now(),
             status: 'pending'
           };

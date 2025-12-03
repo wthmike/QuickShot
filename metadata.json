@@ -1,7 +1,8 @@
 {
-  "name": "NatureCam",
+  "name": "HippoCam",
   "description": "A minimalist camera application that uses a custom physics-based color engine to produce natural, film-like photography.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "geolocation"
   ]
 }

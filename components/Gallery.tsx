@@ -1,6 +1,6 @@
 import React from 'react';
 import { Photo } from '../types';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, EyeOff } from 'lucide-react';
 
 interface GalleryProps {
   photos: Photo[];
@@ -9,6 +9,32 @@ interface GalleryProps {
 }
 
 export const Gallery: React.FC<GalleryProps> = ({ photos, onSelect, onBack }) => {
+
+  const getPreviewStyle = (photo: Photo) => {
+    if (photo.processedUrl) return {};
+    
+    // Same hash logic as PhotoDetail for consistency
+    let hash = 0;
+    for (let i = 0; i < photo.id.length; i++) {
+        hash = ((hash << 5) - hash) + photo.id.charCodeAt(i);
+        hash |= 0;
+    }
+    const seed = Math.abs(hash) % 4;
+
+    const origins = [
+        '25% 30%', 
+        '75% 30%', 
+        '25% 60%', 
+        '75% 60%'
+    ];
+
+    return {
+        transform: 'scale(6)', // Matched zoom level to PhotoDetail (was 3)
+        transformOrigin: origins[seed],
+        filter: 'grayscale(100%) contrast(140%) brightness(0.9)',
+    };
+  };
+
   return (
     <div className="h-full w-full bg-[#050505] flex flex-col text-white">
       {/* Swiss Header */}
@@ -45,15 +71,18 @@ export const Gallery: React.FC<GalleryProps> = ({ photos, onSelect, onBack }) =>
                 <img 
                   src={photo.processedUrl || photo.originalUrl} 
                   alt="Thumbnail" 
-                  className={`w-full h-full object-cover transition-all duration-500 ${!photo.processedUrl ? 'grayscale opacity-70 group-hover:opacity-100 group-hover:grayscale-0' : ''}`}
+                  className={`w-full h-full object-cover transition-all duration-500 ${!photo.processedUrl ? 'opacity-80' : ''}`}
+                  style={getPreviewStyle(photo)}
                 />
                 
                 {/* Status Indicator overlay */}
                 {!photo.processedUrl && (
-                    <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-neutral-500 rounded-full" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                         <EyeOff className="text-white/50" size={16} />
+                    </div>
                 )}
                 {photo.processedUrl && (
-                    <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+                    <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.5)] opacity-0 group-hover:opacity-100 transition-opacity" />
                 )}
               </button>
             ))}
