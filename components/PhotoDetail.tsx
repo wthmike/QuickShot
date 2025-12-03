@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Photo } from '../types';
 import { processImageNatural } from '../services/geminiService';
-import { ArrowLeft, Loader2, PenLine, EyeOff, X, Play, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Loader2, PenLine, EyeOff, X, RefreshCw } from 'lucide-react';
 
 interface PhotoDetailProps {
   photo: Photo;
@@ -134,6 +134,19 @@ export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdat
   const dateStr = new Date(photo.timestamp).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '.');
   const timeStr = new Date(photo.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
+  // CSS for positioning the playback overlay over the 2x2 grid on the poster
+  // Based on geminiService layout logic: Ratio 2.24
+  const overlayStyle: React.CSSProperties = {
+      position: 'absolute',
+      left: '0',
+      top: '0',
+      marginLeft: '4.46%',    // 0.1 / 2.24
+      marginTop: '13.39%',    // 0.3 / 2.24 (Margin top % is relative to width)
+      width: '91.07%',        // 2.04 / 2.24
+      aspectRatio: '1/1',
+      pointerEvents: 'none'
+  };
+
   return (
     <div className="h-full w-full bg-[#050505] flex flex-col text-white relative">
       
@@ -159,8 +172,11 @@ export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdat
 
         <div className="w-full max-w-2xl flex flex-col items-center py-8 px-4">
             
-            {/* The Image */}
-            <div className={`relative w-full shadow-2xl ${!photo.processedUrl ? 'overflow-hidden aspect-[3/4] bg-neutral-900' : ''}`}>
+            {/* The Image Container */}
+            <div 
+                className={`relative w-full shadow-2xl ${!photo.processedUrl ? 'overflow-hidden aspect-[3/4] bg-neutral-900' : 'cursor-pointer'}`}
+                onClick={togglePlayback}
+            >
                 {isProcessing ? (
                     <div className="aspect-[3/4] w-full bg-[#0a0a0a] flex flex-col items-center justify-center gap-4 animate-pulse border border-neutral-800">
                         <Loader2 className="animate-spin text-white" size={32} />
@@ -168,36 +184,30 @@ export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdat
                     </div>
                 ) : (
                     <>  
-                        {/* Playback View */}
-                        {isPlaying && playbackImage ? (
-                            <div 
-                                onClick={togglePlayback}
-                                className="w-full aspect-square bg-black relative border border-neutral-800 cursor-pointer"
-                            >
-                                <img 
-                                    src={playbackImage} 
-                                    alt="Playback"
-                                    className="w-full h-full object-cover"
-                                />
-                                <div className="absolute top-4 right-4 bg-red-500 w-2 h-2 rounded-full animate-pulse shadow-[0_0_10px_red]" />
-                                <div className="absolute bottom-4 left-4 text-[9px] uppercase tracking-[0.2em] text-white/50 bg-black/50 px-2 py-1 backdrop-blur-md">
-                                    Loop Playback
-                                </div>
-                            </div>
-                        ) : (
-                            // Standard View
-                            <img 
+                        {/* Base Poster (Always Visible) */}
+                        <img 
                             src={activeImage} 
                             alt="Capture" 
-                            onClick={togglePlayback}
-                            className={`w-full h-auto block bg-[#0a0a0a] transition-all duration-700 ${!photo.processedUrl ? 'object-cover w-full h-full' : 'object-contain cursor-pointer'}`}
+                            className={`w-full h-auto block bg-[#0a0a0a] transition-all duration-700 ${!photo.processedUrl ? 'object-cover w-full h-full' : 'object-contain'}`}
                             style={!photo.processedUrl ? previewFocusStyle : {}}
-                            />
+                        />
+
+                        {/* GIF Playback Overlay */}
+                        {isPlaying && playbackImage && photo.processedUrl && (
+                            <div style={overlayStyle} className="z-10 bg-black">
+                                <img 
+                                    src={playbackImage} 
+                                    alt="Playback Frame"
+                                    className="w-full h-full object-cover"
+                                />
+                                {/* Minimal Active Indicator */}
+                                <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_red]" />
+                            </div>
                         )}
                         
-                        {/* Playback Hint (if available) */}
+                        {/* Playback Hint (if available and not playing) */}
                         {!isPlaying && photo.processedUrl && (photo.processedFrames || photo.frames) && (
-                            <div className="absolute top-4 right-4 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute top-[15%] right-[6%] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-20">
                                 <div className="bg-black/40 backdrop-blur-sm p-2 rounded-full">
                                     <RefreshCw size={12} className="text-white/80" />
                                 </div>
@@ -219,10 +229,11 @@ export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdat
                         {photo.processedUrl && !showOriginal && !isPlaying && (
                         <button 
                             className="absolute bottom-4 right-4 text-[9px] uppercase tracking-[0.2em] bg-black/80 backdrop-blur border border-white/10 px-3 py-2 hover:bg-white hover:text-black transition-colors z-20"
-                            onMouseDown={() => setShowOriginal(true)}
-                            onMouseUp={() => setShowOriginal(false)}
-                            onTouchStart={() => setShowOriginal(true)}
-                            onTouchEnd={() => setShowOriginal(false)}
+                            onMouseDown={(e) => { e.stopPropagation(); setShowOriginal(true); }}
+                            onMouseUp={(e) => { e.stopPropagation(); setShowOriginal(false); }}
+                            onTouchStart={(e) => { e.stopPropagation(); setShowOriginal(true); }}
+                            onTouchEnd={(e) => { e.stopPropagation(); setShowOriginal(false); }}
+                            onClick={(e) => e.stopPropagation()}
                         >
                             View Negative
                         </button>
