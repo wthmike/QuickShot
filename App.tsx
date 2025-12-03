@@ -113,6 +113,7 @@ const App: React.FC = () => {
           photos={photos}
           onSelect={handleSelectPhoto}
           onBack={() => setView(AppView.CAMERA)}
+          onDelete={handleDeletePhoto}
         />
       )}
 
