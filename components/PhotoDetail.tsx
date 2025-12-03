@@ -1,53 +1,31 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Photo } from '../types';
 import { processImageNatural } from '../services/geminiService';
-import { ArrowLeft, Loader2, PenLine, EyeOff, X, RefreshCw } from 'lucide-react';
+import { uploadPost } from '../services/socialService';
+import { ArrowLeft, Loader2, PenLine, EyeOff, X, UploadCloud } from 'lucide-react';
 
 interface PhotoDetailProps {
   photo: Photo;
   onBack: () => void;
   onUpdatePhoto: (photo: Photo) => void;
   onDelete: (id: string) => void;
+  onPostComplete: () => void;
 }
 
-export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdatePhoto, onDelete }) => {
+export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdatePhoto, onDelete, onPostComplete }) => {
   const [isProcessing, setIsProcessing] = useState(false);
-  const [showOriginal, setShowOriginal] = useState(false);
   const [showDevelopModal, setShowDevelopModal] = useState(false);
   const [captionText, setCaptionText] = useState(photo.caption || '');
   const [error, setError] = useState<string | null>(null);
-
-  // Playback State
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
-  const intervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (photo.caption) setCaptionText(photo.caption);
   }, [photo.id]);
 
-  // Handle Loop Playback
-  useEffect(() => {
-    // If developed, use processed frames. If raw (shouldn't really play, but fallback), use raw frames.
-    const framesToPlay = photo.processedFrames || photo.frames;
-
-    if (isPlaying && framesToPlay && framesToPlay.length > 0) {
-        intervalRef.current = window.setInterval(() => {
-            setCurrentFrameIndex(prev => (prev + 1) % (framesToPlay.length));
-        }, 120); // 120ms per frame ~ 8fps
-    } else {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        setCurrentFrameIndex(0);
-    }
-    return () => {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [isPlaying, photo.frames, photo.processedFrames]);
-
-  // Deterministic random position for the preview zoom
+  // Deterministic random position for the preview zoom (Latent Image style)
+  // We NOW apply this ALWAYS to hide the real image until posting
   const previewFocusStyle = useMemo(() => {
-    if (photo.processedUrl) return {};
-    
     // Hash ID to get 0-3
     let hash = 0;
     for (let i = 0; i < photo.id.length; i++) {
@@ -64,88 +42,58 @@ export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdat
     ];
 
     return {
-        transform: 'scale(6)', // Increased zoom from 3 to 6
+        transform: 'scale(6)', // High zoom to abstract the image
         transformOrigin: origins[seed],
         filter: 'grayscale(100%) contrast(140%) brightness(0.9)',
     };
-  }, [photo.id, photo.processedUrl]);
+  }, [photo.id]);
 
   const initiateDevelop = () => {
     setShowDevelopModal(true);
     setError(null);
   };
 
-  const handleProcess = async () => {
-    if (photo.processedUrl) return;
-    
+  const handleDevelopAndPost = async () => {
     // Close modal
     setShowDevelopModal(false);
     setIsProcessing(true);
     setError(null);
     
-    // Save caption
-    onUpdatePhoto({ ...photo, caption: captionText });
-
-    // Defer processing to let UI update
+    // Defer processing to let UI update to loading state
     requestAnimationFrame(() => {
         setTimeout(async () => {
             try {
+                // 1. Process the image (Heavy GPU work)
                 const result = await processImageNatural(photo.originalUrl, captionText);
-                onUpdatePhoto({
+                
+                // 2. Update local state
+                const updatedPhoto = {
                   ...photo,
                   caption: captionText,
                   processedUrl: result.combinedUrl,
-                  processedFrames: result.frames, // Save individual processed frames
-                  status: 'completed'
-                });
+                  processedFrames: result.frames,
+                  status: 'completed' as const
+                };
+                onUpdatePhoto(updatedPhoto);
+
+                // 3. Upload to Feed (Social)
+                await uploadPost(updatedPhoto);
+                
+                // 4. Redirect to Feed to see the result
+                onPostComplete();
+
               } catch (e) {
                 console.error(e);
-                setError("Processing failed. Please try again.");
-              } finally {
+                setError("Development failed. Please try again.");
                 setIsProcessing(false);
               }
         }, 100);
     });
   };
 
-  const handleDownload = () => {
-    const link = document.createElement('a');
-    link.href = showOriginal ? photo.originalUrl : (photo.processedUrl || photo.originalUrl);
-    link.download = `HC_${photo.timestamp}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const togglePlayback = () => {
-      // Only allow playback if developed and we have frames
-      if (photo.processedUrl && (photo.processedFrames || photo.frames)) {
-          setIsPlaying(!isPlaying);
-      }
-  };
-
-  const activeImage = showOriginal ? photo.originalUrl : (photo.processedUrl || photo.originalUrl);
-  
-  // Determine which frame to show during playback
-  const playbackImage = (photo.processedFrames && photo.processedFrames.length > 0) 
-      ? photo.processedFrames[currentFrameIndex] 
-      : (photo.frames && photo.frames.length > 0 ? photo.frames[currentFrameIndex] : null);
-
+  const activeImage = photo.originalUrl;
   const dateStr = new Date(photo.timestamp).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '.');
   const timeStr = new Date(photo.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-
-  // CSS for positioning the playback overlay over the 2x2 grid on the poster
-  // Based on geminiService layout logic: Ratio 2.24
-  const overlayStyle: React.CSSProperties = {
-      position: 'absolute',
-      left: '0',
-      top: '0',
-      marginLeft: '4.46%',    // 0.1 / 2.24
-      marginTop: '13.39%',    // 0.3 / 2.24 (Margin top % is relative to width)
-      width: '91.07%',        // 2.04 / 2.24
-      aspectRatio: '1/1',
-      pointerEvents: 'none'
-  };
 
   return (
     <div className="h-full w-full bg-[#050505] flex flex-col text-white relative">
@@ -161,7 +109,7 @@ export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdat
       </div>
 
       {/* Main Image Stage */}
-      <div className="flex-1 relative flex flex-col items-center overflow-y-auto bg-[#111]">
+      <div className="flex-1 relative flex flex-col items-center justify-center overflow-hidden bg-[#111]">
         
         {/* Error Notification */}
         {error && (
@@ -173,71 +121,30 @@ export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdat
         <div className="w-full max-w-2xl flex flex-col items-center py-8 px-4">
             
             {/* The Image Container */}
-            <div 
-                className={`relative w-full shadow-2xl ${!photo.processedUrl ? 'overflow-hidden aspect-[3/4] bg-neutral-900' : 'cursor-pointer'}`}
-                onClick={togglePlayback}
-            >
+            <div className="relative w-full shadow-2xl overflow-hidden aspect-[3/4] bg-neutral-900 border border-neutral-800">
                 {isProcessing ? (
-                    <div className="aspect-[3/4] w-full bg-[#0a0a0a] flex flex-col items-center justify-center gap-4 animate-pulse border border-neutral-800">
+                    <div className="absolute inset-0 z-20 bg-[#0a0a0a] flex flex-col items-center justify-center gap-4 animate-pulse">
                         <Loader2 className="animate-spin text-white" size={32} />
-                        <span className="text-xs uppercase tracking-[0.2em] text-neutral-400">Developing Negative...</span>
+                        <span className="text-xs uppercase tracking-[0.2em] text-neutral-400">Developing & Posting...</span>
                     </div>
                 ) : (
                     <>  
-                        {/* Base Poster (Always Visible) */}
+                        {/* Abstract Latent Image (Always Visible) */}
                         <img 
                             src={activeImage} 
-                            alt="Capture" 
-                            className={`w-full h-auto block bg-[#0a0a0a] transition-all duration-700 ${!photo.processedUrl ? 'object-cover w-full h-full' : 'object-contain'}`}
-                            style={!photo.processedUrl ? previewFocusStyle : {}}
+                            alt="Latent Capture" 
+                            className="w-full h-full object-cover transition-all duration-700 opacity-60"
+                            style={previewFocusStyle}
                         />
-
-                        {/* GIF Playback Overlay */}
-                        {isPlaying && playbackImage && photo.processedUrl && (
-                            <div style={overlayStyle} className="z-10 bg-black">
-                                <img 
-                                    src={playbackImage} 
-                                    alt="Playback Frame"
-                                    className="w-full h-full object-cover"
-                                />
-                                {/* Minimal Active Indicator */}
-                                <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_red]" />
-                            </div>
-                        )}
                         
-                        {/* Playback Hint (if available and not playing) */}
-                        {!isPlaying && photo.processedUrl && (photo.processedFrames || photo.frames) && (
-                            <div className="absolute top-[15%] right-[6%] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                                <div className="bg-black/40 backdrop-blur-sm p-2 rounded-full">
-                                    <RefreshCw size={12} className="text-white/80" />
-                                </div>
-                            </div>
-                        )}
-                        
-                        {/* Latent Image Label */}
-                        {!photo.processedUrl && (
-                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <div className="bg-black/50 backdrop-blur-sm border border-white/20 px-6 py-4 flex flex-col items-center gap-2">
-                                     <EyeOff className="text-white/80" size={20} />
-                                     <span className="text-[10px] uppercase tracking-[0.3em] text-white/90">Latent Image</span>
-                                     <span className="text-[9px] uppercase tracking-widest text-neutral-400">Develop to reveal</span>
-                                </div>
-                             </div>
-                        )}
-
-                        {/* Compare Tooltip */}
-                        {photo.processedUrl && !showOriginal && !isPlaying && (
-                        <button 
-                            className="absolute bottom-4 right-4 text-[9px] uppercase tracking-[0.2em] bg-black/80 backdrop-blur border border-white/10 px-3 py-2 hover:bg-white hover:text-black transition-colors z-20"
-                            onMouseDown={(e) => { e.stopPropagation(); setShowOriginal(true); }}
-                            onMouseUp={(e) => { e.stopPropagation(); setShowOriginal(false); }}
-                            onTouchStart={(e) => { e.stopPropagation(); setShowOriginal(true); }}
-                            onTouchEnd={(e) => { e.stopPropagation(); setShowOriginal(false); }}
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            View Negative
-                        </button>
-                        )}
+                        {/* Overlay Information */}
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="bg-black/50 backdrop-blur-sm border border-white/20 px-8 py-6 flex flex-col items-center gap-3">
+                                <EyeOff className="text-white/80" size={24} />
+                                <span className="text-[10px] uppercase tracking-[0.3em] text-white/90">Latent Image</span>
+                                <span className="text-[9px] uppercase tracking-widest text-neutral-400">Develop to Reveal</span>
+                        </div>
+                        </div>
                     </>
                 )}
             </div>
@@ -247,45 +154,37 @@ export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdat
       {/* Information Strip */}
       <div className="px-6 py-4 flex items-center justify-between border-t border-neutral-900 bg-[#050505]">
         <div>
-            <div className="text-[9px] uppercase tracking-[0.2em] text-neutral-500 mb-1">Process</div>
-            <div className={`text-xs uppercase tracking-widest font-bold ${photo.processedUrl ? 'text-white' : 'text-neutral-400'}`}>
-                {photo.processedUrl ? 'C-41 + Typeset' : 'Unexposed'}
+            <div className="text-[9px] uppercase tracking-[0.2em] text-neutral-500 mb-1">Status</div>
+            <div className="text-xs uppercase tracking-widest font-bold text-neutral-400">
+                Undeveloped Negative
             </div>
         </div>
         <div>
             <div className="text-[9px] uppercase tracking-[0.2em] text-neutral-500 mb-1">Stock</div>
             <div className="text-xs uppercase tracking-widest font-bold text-white">
-                {photo.processedUrl ? 'HC 400' : 'RAW'}
+                RAW
             </div>
         </div>
       </div>
 
       {/* Action Bar */}
       <div className="grid grid-cols-2 border-t border-neutral-800 bg-[#050505]">
-        {!photo.processedUrl ? (
           <button
             onClick={initiateDevelop}
             disabled={isProcessing}
             className="h-20 border-r border-neutral-800 flex flex-col items-center justify-center gap-1 hover:bg-white hover:text-black transition-colors disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-white"
           >
+             {isProcessing ? <Loader2 className="animate-spin" /> : <UploadCloud size={20} />}
              <span className="text-sm font-bold uppercase tracking-widest">
-                Develop Film
+                Develop & Post
              </span>
-             {!isProcessing && <span className="text-[9px] tracking-wider opacity-60">BAKE & PROCESS</span>}
+             {!isProcessing && <span className="text-[9px] tracking-wider opacity-60">COMMIT TO FEED</span>}
           </button>
-        ) : (
-            <button
-            onClick={handleDownload}
-            className="h-20 border-r border-neutral-800 flex flex-col items-center justify-center gap-1 hover:bg-white hover:text-black transition-colors"
-          >
-             <span className="text-sm font-bold uppercase tracking-widest">Print</span>
-             <span className="text-[9px] tracking-wider opacity-60">SAVE TO ROLL</span>
-          </button>
-        )}
 
         <button 
             onClick={() => onDelete(photo.id)} 
-            className="h-20 flex flex-col items-center justify-center gap-1 hover:bg-red-600 transition-colors"
+            disabled={isProcessing}
+            className="h-20 flex flex-col items-center justify-center gap-1 hover:bg-red-600 transition-colors disabled:opacity-50"
         >
           <span className="text-sm font-bold uppercase tracking-widest">Discard</span>
           <span className="text-[9px] tracking-wider opacity-60">BURN NEGATIVE</span>
@@ -305,7 +204,7 @@ export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdat
                 
                 <div className="flex items-center gap-2 mb-2 text-neutral-500">
                     <PenLine size={12} />
-                    <span className="text-[9px] uppercase tracking-[0.2em]">Add a caption (Optional)</span>
+                    <span className="text-[9px] uppercase tracking-[0.2em]">Add a caption</span>
                 </div>
                 
                 <textarea 
@@ -318,10 +217,10 @@ export const PhotoDetail: React.FC<PhotoDetailProps> = ({ photo, onBack, onUpdat
                 />
 
                 <button 
-                    onClick={handleProcess}
+                    onClick={handleDevelopAndPost}
                     className="w-full h-14 bg-white text-black font-bold uppercase tracking-widest text-sm hover:bg-neutral-200 transition-colors flex items-center justify-center gap-2"
                 >
-                    {captionText.trim() ? 'Imprint & Develop' : 'Develop Without Note'}
+                    Confirm & Post
                 </button>
            </div>
         </div>

@@ -1,3 +1,4 @@
+
 export interface Photo {
   id: string;
   originalUrl: string;
@@ -9,12 +10,38 @@ export interface Photo {
   processedFrames?: string[];
 }
 
+export interface User {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  bio: string;
+  followers: number;
+  following: number;
+}
+
+export interface Post {
+  id: string;
+  userId: string;
+  user: User; // In Supabase this would be a join
+  mainImageUrl: string;
+  frameUrls: string[]; // For GIF playback
+  caption: string;
+  locationName: string;
+  timestamp: number;
+  likes: number;
+  likedByMe: boolean;
+}
+
 export enum CameraMode {
   PHOTO = 'PHOTO',
 }
 
 export enum AppView {
+  FEED = 'FEED',
   CAMERA = 'CAMERA',
-  GALLERY = 'GALLERY',
+  PROFILE = 'PROFILE',
+  LOCAL_GALLERY = 'LOCAL_GALLERY', // Your private archive
   PHOTO_DETAIL = 'PHOTO_DETAIL',
+  ONBOARDING = 'ONBOARDING',
 }

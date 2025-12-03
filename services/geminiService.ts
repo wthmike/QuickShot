@@ -1,3 +1,4 @@
+
 // Re-purposed service for Local Film Emulation
 // No external APIs are used. All processing happens on the device GPU/CPU via Canvas 2D.
 
@@ -165,7 +166,8 @@ export async function stitchBurst(images: string[], headerText: string, footerTe
             ctx.letterSpacing = '0.05em';
             ctx.fillText(`${dateStr} — ${timeStr}`, canvas.width - padding, footerY + (size * 0.1));
 
-            resolve(canvas.toDataURL('image/jpeg', 0.90));
+            // COMPRESSION: Use WebP at 0.80 quality
+            resolve(canvas.toDataURL('image/webp', 0.80));
         } catch (e) {
             reject(e);
         }
@@ -400,12 +402,14 @@ export async function processImageNatural(base64Image: string, caption?: string)
             if (tempCtx) {
                 // Grab the exact pixels from the final canvas
                 tempCtx.drawImage(canvas, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
-                processedFrames.push(tempC.toDataURL('image/jpeg', 0.90));
+                // COMPRESSION: Use WebP at 0.80
+                processedFrames.push(tempC.toDataURL('image/webp', 0.80));
             }
         }
 
         resolve({
-            combinedUrl: canvas.toDataURL('image/jpeg', 0.90),
+            // COMPRESSION: Use WebP at 0.80
+            combinedUrl: canvas.toDataURL('image/webp', 0.80),
             frames: processedFrames
         });
       } catch (e) {
