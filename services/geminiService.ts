@@ -184,61 +184,62 @@ export async function processImageNatural(base64Image: string, filterType: Filte
 
 
         // --- STEP 2: APPLY FILTER LOOK ---
+        // Strategy: We copy the current canvas (with blur) to a temp canvas,
+        // then draw it back onto the main canvas with a filter applied.
         
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
         const tCtx = tempCanvas.getContext('2d');
+        
         if (tCtx) {
-            
-            // Default "Develop" pass - copy current state to temp
+            // Copy current state to temp
             tCtx.drawImage(canvas, 0, 0);
             
-            // --- FILTER LOGIC ---
+            // Prepare main canvas for filtered draw
+            ctx.globalCompositeOperation = 'source-over';
+            let overlayColor: string | null = null;
+            let overlayMode: GlobalCompositeOperation = 'source-over';
+
+            // Filter Configuration
             if (filterType === 'HIPPO_400') {
                 // COLOR 1: NATURAL / RICH
-                // Good contrast, slight saturation bump
-                tCtx.filter = 'contrast(1.08) saturate(1.15) brightness(1.02)';
-                tCtx.drawImage(canvas, 0, 0);
-                
-                // Commit base adjustments
-                ctx.drawImage(tempCanvas, 0, 0);
-
-                // Subtle Cool Shadow Lift
-                ctx.globalCompositeOperation = 'screen';
-                ctx.fillStyle = 'rgba(20, 30, 40, 0.05)'; 
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.filter = 'contrast(1.08) saturate(1.15) brightness(1.02)';
+                overlayMode = 'screen';
+                overlayColor = 'rgba(20, 30, 40, 0.05)'; 
 
             } else if (filterType === 'HIPPO_800') {
                 // COLOR 2: WARMER / HIGHER ISO FEEL
-                // Replaces "WARM" with "800" - slightly more grain (handled in grain step), warmer tone
-                tCtx.filter = 'contrast(1.1) saturate(1.2) brightness(1.05) sepia(0.15)';
-                tCtx.drawImage(canvas, 0, 0);
-                ctx.drawImage(tempCanvas, 0, 0);
-
-                // Warm Overlay
-                ctx.globalCompositeOperation = 'overlay';
-                ctx.fillStyle = 'rgba(255, 200, 150, 0.08)'; 
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.filter = 'contrast(1.1) saturate(1.2) brightness(1.05) sepia(0.15)';
+                overlayMode = 'overlay';
+                overlayColor = 'rgba(255, 200, 150, 0.08)'; 
 
             } else if (filterType === 'WILLIAM_400') {
                 // B&W 1: WILLIAM (The Hippo) STANDARD MONO
-                // Classic Tri-X feel
-                tCtx.filter = 'grayscale(100%) contrast(1.1) brightness(1.0)';
-                tCtx.drawImage(canvas, 0, 0);
-                ctx.drawImage(tempCanvas, 0, 0);
-
-                // Very slight tint for richness
-                ctx.globalCompositeOperation = 'multiply';
-                ctx.fillStyle = 'rgba(20, 20, 25, 0.05)'; 
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.filter = 'grayscale(100%) contrast(1.1) brightness(1.0)';
+                overlayMode = 'multiply';
+                overlayColor = 'rgba(20, 20, 25, 0.05)'; 
 
             } else if (filterType === 'WILLIAM_H') {
                 // B&W 2: WILLIAM HIGH CONTRAST
-                // Crushed blacks, bright whites, high drama
-                tCtx.filter = 'grayscale(100%) contrast(1.45) brightness(1.1)';
-                tCtx.drawImage(canvas, 0, 0);
-                ctx.drawImage(tempCanvas, 0, 0);
+                ctx.filter = 'grayscale(100%) contrast(1.45) brightness(1.1)';
+            } else {
+                // Fallback / Standard
+                ctx.filter = 'none';
+            }
+
+            // Execute Filtered Draw
+            ctx.drawImage(tempCanvas, 0, 0);
+            
+            // Reset Filter
+            ctx.filter = 'none';
+
+            // Apply Tint/Overlay if needed
+            if (overlayColor) {
+                ctx.globalCompositeOperation = overlayMode;
+                ctx.fillStyle = overlayColor;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.globalCompositeOperation = 'source-over';
             }
         }
 
@@ -308,6 +309,7 @@ export async function processImageNatural(base64Image: string, filterType: Filte
         ctx.globalCompositeOperation = 'source-over';
 
         // --- STEP 4: EXTRACT FRAMES ---
+        // Extracting frames from the FINAL processed image so they share the look
         const processedFrames: string[] = [];
         for (const q of quadrants) {
             const tempC = document.createElement('canvas');
