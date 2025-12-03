@@ -1,9 +1,14 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Post } from '../types';
-import { getFeed, CURRENT_USER } from '../services/socialService';
-import { Loader2, Heart, Download } from 'lucide-react';
 
-export const Feed: React.FC = () => {
+import React, { useEffect, useState, useRef } from 'react';
+import { Post, FilterType } from '../types';
+import { getFeed, CURRENT_USER, toggleLike } from '../services/socialService';
+import { Loader2, Heart, Share2, MapPin, ArrowDown, ArrowUp, CornerDownLeft, Film } from 'lucide-react';
+
+interface FeedProps {
+    onNavigateProfile?: (userId: string) => void;
+}
+
+export const Feed: React.FC<FeedProps> = ({ onNavigateProfile }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -26,26 +31,67 @@ export const Feed: React.FC = () => {
 
   return (
     <div className="h-full overflow-y-auto bg-[#050505] pb-24 scrollbar-hide">
-      {/* Header */}
-      <div className="pt-8 pb-4 px-5 flex items-baseline justify-between sticky top-0 bg-[#050505]/95 backdrop-blur z-20 border-b border-neutral-900/50">
-        <h1 className="text-xl font-bold tracking-tight text-white font-sans">Sightings</h1>
-        <span className="text-[10px] uppercase tracking-widest text-neutral-500">Live</span>
+      {/* Editorial Header */}
+      <div className="pt-14 pb-6 px-5 sticky top-0 bg-[#050505]/95 backdrop-blur-xl z-30 border-b border-neutral-900 transition-all duration-500">
+        <div className="flex flex-col w-full">
+            {/* Top Meta Line - Swiss Grid Style */}
+            <div className="flex justify-between items-center mb-2 border-b border-neutral-800 pb-3">
+                 <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-white"></div>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-neutral-500">
+                        Global Feed
+                    </span>
+                 </div>
+                 <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-neutral-500">
+                     Est. {new Date().getFullYear()}
+                 </span>
+            </div>
+
+            {/* Title */}
+            <div className="mt-1">
+                <h1 className="text-6xl font-black tracking-tighter uppercase leading-[0.8] text-white">
+                    Chronicle
+                </h1>
+            </div>
+        </div>
       </div>
 
       <div className="flex flex-col w-full">
-        {posts.map(post => (
-          <FeedPoster key={post.id} post={post} isMe={post.userId === CURRENT_USER.id} />
+        {posts.map((post, index) => (
+          <FeedPoster 
+            key={post.id} 
+            post={post} 
+            index={index} 
+            onProfileClick={onNavigateProfile}
+          />
         ))}
       </div>
     </div>
   );
 };
 
-const FeedPoster: React.FC<{ post: Post, isMe: boolean }> = ({ post, isMe }) => {
+interface FeedPosterProps { 
+    post: Post; 
+    index: number;
+    onProfileClick?: (userId: string) => void;
+}
+
+const FeedPoster: React.FC<FeedPosterProps> = ({ post, index, onProfileClick }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
-  const [downloading, setDownloading] = useState(false);
   const intervalRef = useRef<number | null>(null);
+
+  // Like State
+  const [isLiked, setIsLiked] = useState(post.likedByMe);
+  const [likeCount, setLikeCount] = useState(post.likes);
+  const [isLiking, setIsLiking] = useState(false);
+
+  // Comment State
+  const [comments, setComments] = useState<{user: string, text: string}[]>(
+      index % 2 === 0 ? [{ user: "Curator", text: "Exceptional light in this frame." }] : []
+  );
+  const [newComment, setNewComment] = useState("");
+  const [expanded, setExpanded] = useState(false);
 
   // Playback Logic
   useEffect(() => {
@@ -66,204 +112,209 @@ const FeedPoster: React.FC<{ post: Post, isMe: boolean }> = ({ post, isMe }) => 
     ? post.frameUrls[currentFrameIndex] 
     : post.mainImageUrl;
 
-  const dateStr = new Date(post.timestamp).toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
-  
-  const downloadPoster = async () => {
-    setDownloading(true);
-    try {
-        const canvas = document.createElement('canvas');
-        const W = 1080; // Standard Portrait width
-        const H = 1920; // 9:16 aspect ratio
-        canvas.width = W;
-        canvas.height = H;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        // 1. Background - Dark Theme
-        ctx.fillStyle = '#050505';
-        ctx.fillRect(0, 0, W, H);
-
-        // 2. Load Image
-        const img = new Image();
-        img.crossOrigin = "Anonymous";
-        await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-            img.src = post.mainImageUrl;
-        });
-
-        // Layout Config
-        const margin = 60;
-        
-        // --- HEADER STAMPS ---
-        ctx.fillStyle = '#525252'; // Neutral 600
-        ctx.font = 'bold 24px "DM Sans", sans-serif';
-        ctx.fillText(`LOG NO. ${post.logIndex || 1}`, margin, 100);
-        
-        const archiveText = "SIGHTINGS ARCHIVE";
-        const archiveWidth = ctx.measureText(archiveText).width;
-        ctx.fillText(archiveText, W - margin - archiveWidth, 100);
-
-        // --- IMAGE ---
-        const imgWidth = W - (margin * 2);
-        const imgHeight = imgWidth; // Square
-        const imgY = 160;
-        
-        ctx.drawImage(img, margin, imgY, imgWidth, imgHeight);
-        
-        // Image Border
-        ctx.strokeStyle = '#262626'; // Neutral 800
-        ctx.lineWidth = 2;
-        ctx.strokeRect(margin, imgY, imgWidth, imgHeight);
-
-        // --- TYPOGRAPHY ---
-        let yPos = imgY + imgHeight + 100;
-        
-        // Location Headline - MASSIVE & WHITE
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '900 110px "DM Sans", sans-serif';
-        const locationName = (post.locationName || "SOMEWHERE").toUpperCase();
-        
-        // Text Wrap Logic for Location
-        const words = locationName.split(' ');
-        let line = '';
-        const lineHeight = 110;
-
-        // Draw location title
-        for(let n = 0; n < words.length; n++) {
-            const testLine = line + words[n] + ' ';
-            const metrics = ctx.measureText(testLine);
-            if (metrics.width > (W - margin*2) && n > 0) {
-                ctx.fillText(line, margin, yPos);
-                line = words[n] + ' ';
-                yPos += lineHeight;
-            } else {
-                line = testLine;
-            }
-        }
-        ctx.fillText(line, margin, yPos);
-
-        yPos += 50;
-
-        // Divider Line
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(margin, yPos, W - (margin*2), 2);
-        
-        yPos += 60;
-
-        // Coordinates & Date Row
-        ctx.fillStyle = '#a1a1aa'; // Neutral 400
-        ctx.font = '500 32px "DM Sans", sans-serif';
-        ctx.fillText(post.coordinates || "00.00°N, 00.00°E", margin, yPos);
-        
-        const dateWidth = ctx.measureText(dateStr).width;
-        ctx.fillText(dateStr, W - margin - dateWidth, yPos);
-
-        // --- CAPTION ---
-        if (post.caption) {
-            yPos += 100;
-            ctx.fillStyle = '#e5e5e5';
-            ctx.font = 'italic 400 48px "Libre Baskerville", serif';
-            
-            // Wrap caption
-            const captionWords = post.caption.split(' ');
-            let captionLine = '';
-            for(let n = 0; n < captionWords.length; n++) {
-                const testLine = captionLine + captionWords[n] + ' ';
-                const metrics = ctx.measureText(testLine);
-                if (metrics.width > (W - margin*2) && n > 0) {
-                    ctx.fillText(captionLine, margin, yPos);
-                    captionLine = captionWords[n] + ' ';
-                    yPos += 70; 
-                } else {
-                    captionLine = testLine;
-                }
-            }
-            ctx.fillText(captionLine, margin, yPos);
-        }
-
-        // Trigger Download
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-        const link = document.createElement('a');
-        link.download = `SIGHTING_${post.logIndex}_${post.locationName.replace(/\s+/g, '_')}.jpg`;
-        link.href = dataUrl;
-        link.click();
-
-    } catch (e) {
-        console.error("Poster gen failed", e);
-        alert("Could not generate poster.");
-    } finally {
-        setDownloading(false);
-    }
+  const getFilterDisplayName = (f?: FilterType) => {
+      switch(f) {
+          case 'HIPPO_400': return 'HIPPO 400';
+          case 'HIPPO_800': return 'HIPPO 800';
+          case 'WILLIAM_400': return 'WILLIAM 400';
+          case 'WILLIAM_H': return 'WILLIAM H';
+          default: return 'HIPPO 400';
+      }
   };
 
+  const filmStockName = getFilterDisplayName(post.filter);
+
+  // Comment Logic
+  const handleCommentSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newComment.trim()) return;
+      setComments([...comments, { user: CURRENT_USER.displayName, text: newComment }]);
+      setNewComment("");
+  };
+
+  // Like Logic
+  const handleLike = async () => {
+      if (isLiking) return;
+      
+      // Optimistic Update
+      const newStatus = !isLiked;
+      setIsLiked(newStatus);
+      setLikeCount(prev => newStatus ? prev + 1 : prev - 1);
+      setIsLiking(true);
+
+      try {
+          await toggleLike(post.id);
+      } catch (e) {
+          // Revert on failure
+          setIsLiked(!newStatus);
+          setLikeCount(prev => !newStatus ? prev + 1 : prev - 1);
+      } finally {
+          setIsLiking(false);
+      }
+  };
+
+  // Prepare display items (Caption + Comments)
+  const allContent = [
+      ...(post.caption ? [{ user: post.user.displayName, text: post.caption, isCaption: true }] : []),
+      ...comments.map(c => ({ user: c.user, text: c.text, isCaption: false }))
+  ];
+
+  // Logic: Show max 2 lines initially.
+  const visibleContent = expanded ? allContent : allContent.slice(0, 2);
+  const hasMore = allContent.length > 2;
+
   return (
-    <div className="w-full bg-[#050505] pb-16 relative group">
-      {/* 1. Full Flush Image */}
-      <div 
-        className="w-full aspect-square bg-[#0a0a0a] relative cursor-pointer overflow-hidden"
-        onClick={() => setIsPlaying(!isPlaying)}
-      >
-        <img 
-            src={activeImage} 
-            alt="Entry" 
-            className={`w-full h-full object-cover transition-all duration-700 ease-out ${isPlaying ? 'scale-[1.02] filter-none' : 'scale-100 grayscale-[0.1]'}`} 
-        />
-        {post.frameUrls.length > 0 && !isPlaying && (
-            <div className="absolute top-4 right-4 w-2 h-2 bg-white/80 rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
-        )}
-      </div>
+    <div className="w-full flex flex-col items-center bg-[#050505] border-b border-neutral-900 last:border-0">
+      
+      {/* Post Container */}
+      <div className="w-full max-w-xl py-10">
+          
+          {/* Header Bar */}
+          <div className="flex justify-between items-end px-5 mb-5">
+              <button 
+                onClick={() => onProfileClick && onProfileClick(post.userId)}
+                className="flex items-center gap-3 group"
+              >
+                <div className="w-9 h-9 bg-neutral-800 overflow-hidden grayscale border border-neutral-800 rounded-none group-hover:border-white transition-colors">
+                    <img src={post.user.avatarUrl} className="w-full h-full object-cover" />
+                </div>
+                <div className="flex flex-col justify-center text-left">
+                    <span className="text-sm font-black uppercase tracking-widest text-white leading-none group-hover:text-neutral-300 transition-colors">
+                        {post.user.displayName}
+                    </span>
+                    <span className="text-[9px] text-neutral-500 uppercase tracking-widest mt-1">
+                        {post.user.username}
+                    </span>
+                </div>
+              </button>
 
-      {/* 2. Content Container (Flush with background, no card) */}
-      <div className="px-5 pt-5 flex flex-col gap-4">
-         
-         {/* Location & Log Index */}
-         <div className="flex items-start justify-between">
-            <h2 className="text-2xl font-black uppercase leading-[0.9] tracking-tight text-white font-sans w-2/3">
-               {post.locationName || "SOMEWHERE"}
-            </h2>
-            <div className="text-[9px] font-bold tracking-widest uppercase text-neutral-500 border border-neutral-800 px-2 py-1 rounded-sm">
-                LOG {post.logIndex || 1}
-            </div>
-         </div>
+              <div className="flex flex-col items-end gap-1">
+                  <span className="text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
+                      FIG. {String(post.logIndex || index + 1).padStart(3, '0')}
+                  </span>
+                  <span className="text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
+                      {new Date(post.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).toUpperCase()}
+                  </span>
+              </div>
+          </div>
 
-         {/* Caption */}
-         {post.caption && (
-             <div>
-                <p className="text-lg text-neutral-300 font-serif italic leading-relaxed">
-                   {post.caption}
-                </p>
-             </div>
-         )}
-
-         {/* Meta Footer */}
-         <div className="flex items-center justify-between pt-2">
-            <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-medium text-white tracking-wide">
-                    {post.user.displayName}
-                </span>
-                <span className="text-[9px] uppercase tracking-widest text-neutral-600 font-bold">
-                    {dateStr}
-                </span>
-            </div>
+          {/* Image Stage - SQUARE 1:1 Aspect Ratio */}
+          <div 
+            className="w-full aspect-square relative cursor-pointer overflow-hidden bg-[#111]"
+            onClick={() => setIsPlaying(!isPlaying)}
+            onDoubleClick={handleLike}
+          >
+            <img 
+                src={activeImage} 
+                alt="Entry" 
+                className={`w-full h-full object-cover transition-all duration-700 ease-out ${isPlaying ? 'scale-[1.02] filter-none' : 'scale-100 grayscale-[10%]'}`} 
+                loading="lazy"
+            />
             
-            <div className="flex items-center gap-3">
-                {isMe && (
-                    <button 
-                        onClick={downloadPoster}
-                        disabled={downloading}
-                        className="text-neutral-600 hover:text-white transition-colors"
-                        title="Download Poster"
-                    >
-                        {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} strokeWidth={1.5} />}
-                    </button>
-                )}
-                <button className="flex items-center gap-1.5 text-neutral-600 hover:text-red-500 transition-colors group">
-                    <Heart size={16} strokeWidth={1.5} className={`transition-colors ${post.likedByMe ? 'fill-red-500 text-red-500' : ''}`} />
-                    <span className="text-[10px] font-mono font-bold group-hover:text-red-500">{post.likes > 0 ? post.likes : ''}</span>
-                </button>
-            </div>
-         </div>
+            {/* Texture Overlay */}
+            <div className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay bg-noise" />
+
+            {/* Heart Animation Overlay (Optional implementation could go here) */}
+
+            {post.frameUrls.length > 0 && !isPlaying && (
+                <div className="absolute top-4 right-4 bg-white/90 backdrop-blur text-black px-2 py-1">
+                    <span className="text-[8px] uppercase tracking-widest font-bold block">Motion</span>
+                </div>
+            )}
+          </div>
+
+          {/* Info Block */}
+          <div className="px-5 mt-4 flex flex-col gap-5">
+             
+             {/* Data Line: Location & Film Stock */}
+             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+                 <div className="flex items-center gap-1 text-white shrink-0">
+                    <MapPin size={10} className="text-white" />
+                    <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] truncate max-w-[150px]">
+                        {post.locationName}
+                    </h2>
+                 </div>
+                 
+                 <div className="flex items-center gap-4">
+                     <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">
+                         {filmStockName}
+                     </span>
+                     
+                     {/* Icons Actions Row */}
+                     <div className="flex items-center gap-4 pl-2 border-l border-neutral-800">
+                        <button className="text-neutral-500 hover:text-white transition-colors group">
+                            <Share2 size={14} strokeWidth={1.5} className="group-hover:scale-110 transition-transform" />
+                        </button>
+                        <button 
+                            onClick={handleLike}
+                            className="flex items-center gap-2 text-neutral-500 hover:text-red-500 transition-colors group"
+                        >
+                            <Heart 
+                                size={14} 
+                                strokeWidth={isLiked ? 0 : 1.5} 
+                                className={`transition-all duration-300 group-hover:scale-110 ${isLiked ? 'fill-red-500 scale-110' : ''}`} 
+                            />
+                            {likeCount > 0 && (
+                                <span className={`text-[9px] font-bold font-mono ${isLiked ? 'text-red-500' : 'text-neutral-600'}`}>
+                                    {likeCount}
+                                </span>
+                            )}
+                        </button>
+                     </div>
+                 </div>
+             </div>
+
+             {/* Content Body */}
+             <div className="flex flex-col gap-2">
+                 {/* Render Visible Items (Caption + Comments) */}
+                 {visibleContent.map((item, i) => (
+                    <div key={i} className={`flex items-start gap-3 text-sm leading-relaxed ${!item.isCaption ? 'opacity-80' : ''}`}>
+                        <span className="font-bold uppercase tracking-wide text-[10px] text-white shrink-0 mt-0.5">
+                            {item.user}
+                        </span>
+                        <span className="font-serif text-neutral-300">
+                            {item.text}
+                        </span>
+                    </div>
+                 ))}
+
+                 {/* Expander Arrow */}
+                 {hasMore && (
+                     <button 
+                        onClick={() => setExpanded(!expanded)}
+                        className="flex items-center gap-2 text-[9px] uppercase tracking-widest text-neutral-500 hover:text-white transition-colors mt-1 self-start py-1"
+                     >
+                        {expanded ? (
+                          <>
+                             <ArrowUp size={12} />
+                             Show Less
+                          </>
+                        ) : (
+                          <>
+                             <ArrowDown size={12} />
+                             View Notes
+                          </>
+                        )}
+                     </button>
+                 )}
+                 
+                 {/* Simple Input */}
+                 <form onSubmit={handleCommentSubmit} className="mt-1 flex items-center gap-2 py-2 transition-colors">
+                    <input 
+                        type="text" 
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="Add observation..."
+                        className="bg-transparent w-full text-sm font-serif text-neutral-500 focus:text-white outline-none placeholder-neutral-800"
+                    />
+                    {newComment.length > 0 && (
+                        <button type="submit" className="text-white hover:text-neutral-300">
+                            <CornerDownLeft size={14} />
+                        </button>
+                    )}
+                 </form>
+             </div>
+          </div>
       </div>
     </div>
   );

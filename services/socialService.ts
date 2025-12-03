@@ -1,5 +1,5 @@
 
-import { Post, User, Photo } from '../types';
+import { Post, User, Photo, FilterType } from '../types';
 
 // CURRENT USER (MOCK - FALLBACK)
 export const CURRENT_USER: User = {
@@ -14,6 +14,7 @@ export const CURRENT_USER: User = {
 
 // MOCK DATA
 const MOCK_USERS: Record<string, User> = {
+    'user_mick_dev': CURRENT_USER,
     'user_1': {
         id: 'user_1',
         username: 'sarah_f',
@@ -49,7 +50,8 @@ let FEED_POSTS: Post[] = [
         timestamp: Date.now() - 3600000,
         likes: 42,
         likedByMe: false,
-        logIndex: 124
+        logIndex: 124,
+        filter: 'HIPPO_800'
     },
     {
         id: 'post_2',
@@ -63,7 +65,8 @@ let FEED_POSTS: Post[] = [
         timestamp: Date.now() - 86400000,
         likes: 89,
         likedByMe: true,
-        logIndex: 45
+        logIndex: 45,
+        filter: 'WILLIAM_400'
     }
 ];
 
@@ -73,16 +76,29 @@ export const getFeed = async (): Promise<Post[]> => {
     return [...FEED_POSTS].sort((a, b) => b.timestamp - a.timestamp);
 };
 
-export const getMyProfile = async (userId?: string): Promise<{ user: User, posts: Post[] }> => {
+export const getUserProfile = async (userId: string): Promise<{ user: User, posts: Post[] }> => {
     await new Promise(r => setTimeout(r, 400));
     
-    // If no specific userId passed, default to hardcoded mock user
-    const targetId = userId || CURRENT_USER.id;
+    // Check MOCK_USERS
+    let targetUser = MOCK_USERS[userId];
     
-    const myPosts = FEED_POSTS.filter(p => p.userId === targetId);
+    // Fallback if not in mock (e.g. fresh login)
+    if (!targetUser && userId === CURRENT_USER.id) {
+        targetUser = CURRENT_USER;
+    }
     
-    return { user: CURRENT_USER, posts: myPosts };
+    // Fallback if user completely unknown
+    if (!targetUser) {
+         targetUser = { ...CURRENT_USER, id: userId, displayName: 'Unknown User', username: 'unknown' };
+    }
+    
+    const userPosts = FEED_POSTS.filter(p => p.userId === userId).sort((a, b) => b.timestamp - a.timestamp);
+    
+    return { user: targetUser, posts: userPosts };
 };
+
+// Helper to keep API consistent
+export const getMyProfile = (userId?: string) => getUserProfile(userId || CURRENT_USER.id);
 
 // Convert a local developed Photo into a Public Post
 export const uploadPost = async (photo: Photo, author: User = CURRENT_USER): Promise<void> => {
@@ -105,8 +121,22 @@ export const uploadPost = async (photo: Photo, author: User = CURRENT_USER): Pro
         timestamp: Date.now(),
         likes: 0,
         likedByMe: false,
-        logIndex: userPostCount + 1
+        logIndex: userPostCount + 1,
+        filter: photo.filter || 'HIPPO_400'
     };
 
     FEED_POSTS.unshift(newPost);
+};
+
+export const toggleLike = async (postId: string): Promise<boolean> => {
+    // Simulate network
+    await new Promise(r => setTimeout(r, 100));
+    
+    const post = FEED_POSTS.find(p => p.id === postId);
+    if (post) {
+        post.likedByMe = !post.likedByMe;
+        post.likes = post.likedByMe ? post.likes + 1 : post.likes - 1;
+        return post.likedByMe;
+    }
+    return false;
 };

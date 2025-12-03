@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabase';
 import { CameraView } from './components/Camera';
@@ -12,6 +13,7 @@ import { Photo, AppView, User } from './types';
 import { initDB, getAllPhotos, savePhoto, deletePhoto } from './services/storageService';
 import { Loader2 } from 'lucide-react';
 import { Session, AuthChangeEvent } from '@supabase/supabase-js';
+import { CURRENT_USER } from './services/socialService';
 
 const STORAGE_KEY = 'naturecam_photos';
 
@@ -28,10 +30,18 @@ const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [checkingProfile, setCheckingProfile] = useState(false);
 
+  // State to track which profile we are viewing (null = my own, but we handle that logic in logic)
+  // Actually, let's explicit: if string set, we are viewing that user.
+  const [viewingProfileId, setViewingProfileId] = useState<string | null>(null);
+
   // 1. Check Auth Session (Real or Mock)
   useEffect(() => {
     // DEV MODE: Start clean to allow manual login flow testing
     if (MOCK_AUTH_MODE) {
+        // DIRECT BYPASS FOR PREVIEW
+        setSession({ user: { id: CURRENT_USER.id, email: 'preview@hippocam.app' } });
+        setUserProfile(CURRENT_USER);
+        setView(AppView.FEED);
         setIsInitializing(false);
         return;
     }
@@ -181,8 +191,8 @@ const App: React.FC = () => {
 
   const handleMockAuthSuccess = (email: string) => {
      setSession({ user: { id: 'dev-user-id', email } });
-     // Force onboarding flow for dev testing
-     setView(AppView.ONBOARDING);
+     setUserProfile(CURRENT_USER);
+     setView(AppView.FEED);
   };
 
   const handleLogout = async () => {
@@ -193,6 +203,22 @@ const App: React.FC = () => {
           setSession(null);
           setUserProfile(null);
       }
+  };
+
+  // Nav Handlers
+  const handleChangeView = (newView: AppView) => {
+      if (newView === AppView.PROFILE) {
+          // If clicking Profile tab, view MY profile
+          if (userProfile) {
+              setViewingProfileId(userProfile.id);
+          }
+      }
+      setView(newView);
+  };
+
+  const handleVisitProfile = (userId: string) => {
+      setViewingProfileId(userId);
+      setView(AppView.PROFILE);
   };
 
   const selectedPhoto = photos.find(p => p.id === selectedPhotoId);
@@ -235,14 +261,17 @@ const App: React.FC = () => {
       <div className="flex-1 overflow-hidden relative">
         
         {view === AppView.FEED && (
-            <Feed />
+            <Feed onNavigateProfile={handleVisitProfile} />
         )}
 
-        {view === AppView.PROFILE && (
+        {view === AppView.PROFILE && userProfile && (
             <Profile 
                 onOpenLocalGallery={() => setView(AppView.LOCAL_GALLERY)} 
-                currentUser={userProfile || undefined}
+                viewingUserId={viewingProfileId || userProfile.id}
+                currentUserId={userProfile.id}
                 onLogout={handleLogout}
+                localPhotoCount={photos.length}
+                onBack={() => setView(AppView.FEED)}
             />
         )}
 
@@ -250,6 +279,7 @@ const App: React.FC = () => {
           <CameraView 
             onCapture={handleCapture}
             onOpenGallery={() => setView(AppView.LOCAL_GALLERY)}
+            onBack={() => setView(AppView.FEED)}
             lastPhotoThumbnail={photos[0]?.processedUrl || photos[0]?.originalUrl}
           />
         )}
@@ -258,7 +288,10 @@ const App: React.FC = () => {
           <Gallery 
             photos={photos}
             onSelect={handleSelectPhoto}
-            onBack={() => setView(AppView.PROFILE)}
+            onBack={() => {
+                setViewingProfileId(userProfile!.id);
+                setView(AppView.PROFILE);
+            }}
             onDelete={handleDeletePhoto}
           />
         )}
@@ -276,7 +309,7 @@ const App: React.FC = () => {
       </div>
 
       {(view === AppView.FEED || view === AppView.PROFILE || view === AppView.CAMERA) && (
-          <Navigation currentView={view} onChangeView={setView} />
+          <Navigation currentView={view} onChangeView={handleChangeView} />
       )}
     </div>
   );

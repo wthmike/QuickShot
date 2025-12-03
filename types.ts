@@ -10,7 +10,10 @@ export interface Photo {
   processedFrames?: string[];
   locationName?: string;
   coordinates?: string;
+  filter?: FilterType;
 }
+
+export type FilterType = 'HIPPO_400' | 'HIPPO_800' | 'WILLIAM_400' | 'WILLIAM_H';
 
 export interface User {
   id: string;
@@ -35,6 +38,7 @@ export interface Post {
   likes: number;
   likedByMe: boolean;
   logIndex: number; // Sequential number for the user's log
+  filter?: FilterType;
 }
 
 export enum CameraMode {

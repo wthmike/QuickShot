@@ -1,16 +1,17 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Photo } from '../types';
+import { Photo, FilterType } from '../types';
 import { stitchBurst } from '../services/geminiService';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ArrowLeft } from 'lucide-react';
 
 interface CameraProps {
   onCapture: (photo: Photo) => void;
   onOpenGallery: () => void;
+  onBack: () => void;
   lastPhotoThumbnail?: string;
 }
 
-export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, lastPhotoThumbnail }) => {
+export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, onBack, lastPhotoThumbnail }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -18,7 +19,9 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
   const [isTakingPhoto, setIsTakingPhoto] = useState(false);
   const [burstCount, setBurstCount] = useState(0); 
   const [error, setError] = useState<string | null>(null);
-  const [isBnW, setIsBnW] = useState(false); // Black and White Mode
+  
+  // New Filter State
+  const [activeFilter, setActiveFilter] = useState<FilterType>('HIPPO_400');
   
   // State for location
   const [coordsText, setCoordsText] = useState<string>("00.00°N, 00.00°W");
@@ -105,6 +108,26 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
   };
 
+  const getFilterStyle = (filter: FilterType) => {
+      switch (filter) {
+          case 'HIPPO_400': return 'contrast(110%) saturate(110%)';
+          case 'HIPPO_800': return 'contrast(105%) sepia(20%) saturate(120%)';
+          case 'WILLIAM_400': return 'grayscale(100%) contrast(100%)';
+          case 'WILLIAM_H': return 'grayscale(100%) contrast(125%) brightness(110%)';
+          default: return 'none';
+      }
+  };
+
+  const getFilterName = (filter: FilterType) => {
+      switch (filter) {
+          case 'HIPPO_400': return 'HIPPO 400';
+          case 'HIPPO_800': return 'HIPPO 800';
+          case 'WILLIAM_400': return 'WILLIAM 400';
+          case 'WILLIAM_H': return 'WILLIAM H';
+          default: return filter;
+      }
+  };
+
   const captureFrame = async (): Promise<string | null> => {
     if (!videoRef.current || !canvasRef.current) return null;
     
@@ -129,11 +152,7 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       ctx.scale(-1, 1);
     }
 
-    // Apply B&W if active
-    if (isBnW) {
-        ctx.filter = 'grayscale(100%) contrast(110%)';
-    }
-
+    // Capture RAW color (we apply filter in development)
     ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, finalDim, finalDim);
 
     return canvas.toDataURL('image/jpeg', 0.85);
@@ -146,6 +165,9 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
     const shots: string[] = [];
     const BURST_SIZE = 4;
     const DELAY_MS = 100; 
+    
+    // Lock in the filter at moment of capture
+    const captureFilter = activeFilter;
 
     try {
       for (let i = 1; i <= BURST_SIZE; i++) {
@@ -169,7 +191,8 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
             timestamp: Date.now(),
             status: 'pending',
             locationName: locationName,
-            coordinates: coordsText
+            coordinates: coordsText,
+            filter: captureFilter // Store selected filter
           };
           onCapture(newPhoto);
       }
@@ -188,9 +211,14 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       
       {/* Top HUD */}
       <div className="h-16 flex items-end justify-between px-4 pb-3 z-10 border-b border-neutral-900 bg-[#050505]">
-         <div className="flex flex-col">
-            <span className="text-[9px] uppercase tracking-widest text-neutral-500">Mode</span>
-            <span className="text-xs text-white font-bold">{isBnW ? 'B&W' : 'Colour'}</span>
+         <div className="flex items-center gap-4">
+             <button onClick={onBack} className="text-white hover:text-neutral-400">
+                <ArrowLeft size={18} />
+             </button>
+             <div className="flex flex-col">
+                <span className="text-[9px] uppercase tracking-widest text-neutral-500">Stock</span>
+                <span className="text-xs text-white font-bold">{getFilterName(activeFilter)}</span>
+             </div>
          </div>
          <div className="flex flex-col items-end">
             <span className="text-[9px] uppercase tracking-widest text-neutral-500">Current</span>
@@ -209,7 +237,7 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
                 playsInline
                 muted
                 className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
-                style={{ filter: isBnW ? 'grayscale(100%) contrast(110%)' : 'none' }}
+                style={{ filter: getFilterStyle(activeFilter) }}
             />
             
             {error && (
@@ -257,30 +285,27 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, la
       </div>
 
       {/* Control Deck */}
-      <div className="h-40 bg-[#050505] border-t border-neutral-900 px-6 pb-6 pt-2 flex flex-col gap-4">
+      <div className="h-44 bg-[#050505] border-t border-neutral-900 px-6 pb-6 pt-2 flex flex-col gap-4">
          
-         {/* Toggles */}
-         <div className="flex justify-center gap-8">
-             <button 
-                onClick={() => setIsBnW(false)} 
-                className={`text-[10px] uppercase tracking-widest transition-colors ${!isBnW ? 'text-white border-b border-white' : 'text-neutral-600'}`}
-             >
-                Colour
-             </button>
-             <button 
-                onClick={() => setIsBnW(true)} 
-                className={`text-[10px] uppercase tracking-widest transition-colors ${isBnW ? 'text-white border-b border-white' : 'text-neutral-600'}`}
-             >
-                B/W
-             </button>
+         {/* Filter Toggles */}
+         <div className="flex justify-between w-full max-w-sm mx-auto pt-2 gap-1">
+             {(['HIPPO_400', 'HIPPO_800', 'WILLIAM_400', 'WILLIAM_H'] as FilterType[]).map(f => (
+                 <button
+                    key={f}
+                    onClick={() => setActiveFilter(f)}
+                    className={`flex-1 text-[9px] uppercase tracking-widest transition-all px-1 py-2 text-center truncate ${activeFilter === f ? 'text-white border-b border-white font-bold' : 'text-neutral-600 hover:text-neutral-400'}`}
+                 >
+                    {getFilterName(f)}
+                 </button>
+             ))}
          </div>
 
          {/* Shutter Row */}
-         <div className="flex items-center justify-between">
+         <div className="flex items-center justify-between mt-2">
             {/* Gallery Access */}
             <button onClick={onOpenGallery} className="w-12 h-12 flex items-center justify-center border border-neutral-800 hover:border-neutral-600 transition-colors bg-neutral-900">
                 {lastPhotoThumbnail ? (
-                    <img src={lastPhotoThumbnail} className={`w-full h-full object-cover ${isBnW ? 'grayscale' : ''}`} />
+                    <img src={lastPhotoThumbnail} className="w-full h-full object-cover" />
                 ) : (
                     <div className="w-2 h-2 bg-neutral-700 rounded-full" />
                 )}

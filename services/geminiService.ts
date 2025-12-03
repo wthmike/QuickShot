@@ -1,4 +1,6 @@
 
+import { FilterType } from '../types';
+
 // Re-purposed service for Local Film Emulation
 // No external APIs are used. All processing happens on the device GPU/CPU via Canvas 2D.
 
@@ -128,7 +130,7 @@ function applyMotionBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w:
     ctx.restore();
 }
 
-export async function processImageNatural(base64Image: string): Promise<{ combinedUrl: string, frames: string[] }> {
+export async function processImageNatural(base64Image: string, filterType: FilterType = 'HIPPO_400'): Promise<{ combinedUrl: string, frames: string[] }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "Anonymous";
@@ -159,7 +161,7 @@ export async function processImageNatural(base64Image: string): Promise<{ combin
         // --- STEP 1: BASE RENDER ---
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
-        // --- STEP 1.5: RANDOM MOTION BLUR ---
+        // --- STEP 1.5: RANDOM MOTION BLUR (Global) ---
         // We want to blur 2 random photos out of the 4.
         const padding = canvas.width * 0.05;
         const gap = canvas.width * 0.02;
@@ -181,36 +183,68 @@ export async function processImageNatural(base64Image: string): Promise<{ combin
         });
 
 
-        // --- STEP 2: HIGH-END REALISTIC FILM LOOK ---
-        // Goal: Natural color science, micro-contrast, no heavy tinting.
-
+        // --- STEP 2: APPLY FILTER LOOK ---
+        
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
         const tCtx = tempCanvas.getContext('2d');
         if (tCtx) {
-            // 1. Primary Curve Adjustment (S-Curve simulation)
-            // Slight contrast boost, very subtle saturation boost.
-            // We do NOT want to wash it out. We want it crisp.
-            tCtx.filter = 'contrast(1.08) saturate(1.15) brightness(1.02)';
+            
+            // Default "Develop" pass - copy current state to temp
             tCtx.drawImage(canvas, 0, 0);
-            ctx.drawImage(tempCanvas, 0, 0);
+            
+            // --- FILTER LOGIC ---
+            if (filterType === 'HIPPO_400') {
+                // COLOR 1: NATURAL / RICH
+                // Good contrast, slight saturation bump
+                tCtx.filter = 'contrast(1.08) saturate(1.15) brightness(1.02)';
+                tCtx.drawImage(canvas, 0, 0);
+                
+                // Commit base adjustments
+                ctx.drawImage(tempCanvas, 0, 0);
+
+                // Subtle Cool Shadow Lift
+                ctx.globalCompositeOperation = 'screen';
+                ctx.fillStyle = 'rgba(20, 30, 40, 0.05)'; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            } else if (filterType === 'HIPPO_800') {
+                // COLOR 2: WARMER / HIGHER ISO FEEL
+                // Replaces "WARM" with "800" - slightly more grain (handled in grain step), warmer tone
+                tCtx.filter = 'contrast(1.1) saturate(1.2) brightness(1.05) sepia(0.15)';
+                tCtx.drawImage(canvas, 0, 0);
+                ctx.drawImage(tempCanvas, 0, 0);
+
+                // Warm Overlay
+                ctx.globalCompositeOperation = 'overlay';
+                ctx.fillStyle = 'rgba(255, 200, 150, 0.08)'; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            } else if (filterType === 'WILLIAM_400') {
+                // B&W 1: WILLIAM (The Hippo) STANDARD MONO
+                // Classic Tri-X feel
+                tCtx.filter = 'grayscale(100%) contrast(1.1) brightness(1.0)';
+                tCtx.drawImage(canvas, 0, 0);
+                ctx.drawImage(tempCanvas, 0, 0);
+
+                // Very slight tint for richness
+                ctx.globalCompositeOperation = 'multiply';
+                ctx.fillStyle = 'rgba(20, 20, 25, 0.05)'; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            } else if (filterType === 'WILLIAM_H') {
+                // B&W 2: WILLIAM HIGH CONTRAST
+                // Crushed blacks, bright whites, high drama
+                tCtx.filter = 'grayscale(100%) contrast(1.45) brightness(1.1)';
+                tCtx.drawImage(canvas, 0, 0);
+                ctx.drawImage(tempCanvas, 0, 0);
+            }
         }
 
-        // 2. Subtle Warmth (Not Orange)
-        // Mimics daylight balanced film.
-        ctx.globalCompositeOperation = 'overlay';
-        ctx.fillStyle = 'rgba(255, 240, 220, 0.08)'; // Very subtle warm white
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // 3. Shadow Density (Rich Blacks)
-        // Instead of blue/teal shadows, we just darken them slightly to mimic good D-Max.
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.fillStyle = 'rgba(10, 10, 12, 0.1)'; 
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // 4. Fine Organic Grain (ISO 200/400 style)
-        // Very subtle, just enough to break digital banding.
+        // --- STEP 3: GRAIN & FINISHING (Common to all, maybe varied intensity) ---
+        
+        // Reset composite for grain
         ctx.globalCompositeOperation = 'overlay';
         const grainCanvas = document.createElement('canvas');
         grainCanvas.width = 128; 
@@ -219,12 +253,28 @@ export async function processImageNatural(base64Image: string): Promise<{ combin
         if (grainCtx) {
             const imageData = grainCtx.createImageData(128, 128);
             const data = imageData.data;
+            
+            // Grain Logic based on ISO/Type
+            let grainIntensity = 30;
+            let grainOpacity = 30;
+
+            if (filterType === 'HIPPO_800') {
+                grainIntensity = 45; // More grain for 800
+                grainOpacity = 40;
+            } else if (filterType === 'WILLIAM_400') {
+                grainIntensity = 50; // B&W generally takes grain better
+                grainOpacity = 50;
+            } else if (filterType === 'WILLIAM_H') {
+                grainIntensity = 60; // High contrast + High Grain
+                grainOpacity = 60;
+            }
+
             for (let i = 0; i < data.length; i += 4) {
-                const val = 120 + Math.random() * 30; // Much tighter range = finer grain
+                const val = 120 + Math.random() * grainIntensity; 
                 data[i] = val;     
                 data[i + 1] = val; 
                 data[i + 2] = val; 
-                data[i + 3] = 30; // Lower opacity
+                data[i + 3] = grainOpacity; 
             }
             grainCtx.putImageData(imageData, 0, 0);
             
@@ -237,24 +287,27 @@ export async function processImageNatural(base64Image: string): Promise<{ combin
             }
         }
 
-        // 5. Optical Softness (Very slight glow on brights)
-        const glowCanvas = document.createElement('canvas');
-        glowCanvas.width = canvas.width / 2;
-        glowCanvas.height = canvas.height / 2;
-        const gCtx = glowCanvas.getContext('2d');
-        if (gCtx) {
-            gCtx.filter = 'blur(4px) brightness(1.2)';
-            gCtx.globalAlpha = 0.2; // Very subtle
-            gCtx.drawImage(canvas, 0, 0, glowCanvas.width, glowCanvas.height);
-            
-            ctx.globalCompositeOperation = 'screen';
-            ctx.drawImage(glowCanvas, 0, 0, canvas.width, canvas.height);
+        // Optical Softness / Glow (Bloom) - Only for color or high contrast
+        // Reduced for William H to keep it sharp/harsh
+        if (filterType !== 'WILLIAM_H') {
+            const glowCanvas = document.createElement('canvas');
+            glowCanvas.width = canvas.width / 2;
+            glowCanvas.height = canvas.height / 2;
+            const gCtx = glowCanvas.getContext('2d');
+            if (gCtx) {
+                gCtx.filter = 'blur(4px) brightness(1.2)';
+                gCtx.globalAlpha = 0.2; 
+                gCtx.drawImage(canvas, 0, 0, glowCanvas.width, glowCanvas.height);
+                
+                ctx.globalCompositeOperation = 'screen';
+                ctx.drawImage(glowCanvas, 0, 0, canvas.width, canvas.height);
+            }
         }
 
         // Reset
         ctx.globalCompositeOperation = 'source-over';
 
-        // --- STEP 3: EXTRACT FRAMES ---
+        // --- STEP 4: EXTRACT FRAMES ---
         const processedFrames: string[] = [];
         for (const q of quadrants) {
             const tempC = document.createElement('canvas');
