@@ -2,11 +2,12 @@
 export interface Photo {
   id: string;
   originalUrl: string;
-  processedUrl?: string;
+  processedUrl?: string; // The filtered square image
+  posterUrl?: string;    // The final generated poster with metadata
   timestamp: number;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   caption?: string;
-  frames?: string[];
+  frames?: string[];     // For burst/gif
   processedFrames?: string[];
   locationName?: string;
   coordinates?: string;
@@ -21,24 +22,6 @@ export interface User {
   displayName: string;
   avatarUrl: string;
   bio: string;
-  followers: number;
-  following: number;
-}
-
-export interface Post {
-  id: string;
-  userId: string;
-  user: User; // In Supabase this would be a join
-  mainImageUrl: string;
-  frameUrls: string[]; // For GIF playback
-  caption: string;
-  locationName: string;
-  coordinates?: string;
-  timestamp: number;
-  likes: number;
-  likedByMe: boolean;
-  logIndex: number; // Sequential number for the user's log
-  filter?: FilterType;
 }
 
 export enum CameraMode {
@@ -46,10 +29,7 @@ export enum CameraMode {
 }
 
 export enum AppView {
-  FEED = 'FEED',
   CAMERA = 'CAMERA',
-  PROFILE = 'PROFILE',
-  LOCAL_GALLERY = 'LOCAL_GALLERY', // Your private archive
+  LOCAL_GALLERY = 'LOCAL_GALLERY',
   PHOTO_DETAIL = 'PHOTO_DETAIL',
-  ONBOARDING = 'ONBOARDING',
 }

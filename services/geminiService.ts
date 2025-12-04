@@ -1,15 +1,17 @@
 
-import { FilterType } from '../types';
-
-// Re-purposed service for Local Film Emulation
-// No external APIs are used. All processing happens on the device GPU/CPU via Canvas 2D.
+import { FilterType, User } from '../types';
 
 // Utility to resize images to avoid OOM crashes on mobile
 async function resizeImage(img: HTMLImageElement, maxWidth: number): Promise<HTMLCanvasElement> {
     const canvas = document.createElement('canvas');
-    const scale = Math.min(1, maxWidth / img.width);
+    let scale = 1;
+    if (img.width > maxWidth) {
+        scale = maxWidth / img.width;
+    }
+    
     canvas.width = img.width * scale;
     canvas.height = img.height * scale;
+    
     const ctx = canvas.getContext('2d');
     if (ctx) {
         ctx.imageSmoothingEnabled = true;
@@ -39,19 +41,13 @@ export async function stitchBurst(images: string[]): Promise<string> {
     })))
       .then(async () => {
         try {
-            // SAFETY: Resize images first.
-            const TARGET_SIZE = 800; 
+            // SAFETY: High Quality Resize
+            const TARGET_SIZE = 1600; 
             const resizedCanvases = await Promise.all(
                 imgObjects.map(img => resizeImage(img, TARGET_SIZE))
             );
 
             // Layout Logic:
-            // The grid is constructed based on the Tile Size (S).
-            // Width = 2*S + Gap + 2*Padding.
-            // P = 0.05 * S
-            // G = 0.02 * S
-            // Total Width Factor = 2 + 0.02 + 0.1 = 2.12
-            
             const size = resizedCanvases[0].width; // S
             const padding = Math.floor(size * 0.05); // P
             const gap = Math.floor(size * 0.02);     // G
@@ -76,20 +72,15 @@ export async function stitchBurst(images: string[]): Promise<string> {
 
             // 2. Draw Grid
             resizedCanvases.forEach((img, index) => {
-                // Col: 0 or 1
                 const col = index % 2;
-                // Row: 0 or 1
                 const row = Math.floor(index / 2);
-
                 const x = padding + (col * (size + gap));
                 const y = padding + (row * (size + gap));
-
-                // Draw Image
                 ctx.drawImage(img, x, y, size, size);
             });
 
-            // COMPRESSION: Use WebP at 0.85 quality
-            resolve(canvas.toDataURL('image/webp', 0.85));
+            // COMPRESSION: Use WebP at High Quality
+            resolve(canvas.toDataURL('image/webp', 0.98));
         } catch (e) {
             reject(e);
         }
@@ -98,71 +89,53 @@ export async function stitchBurst(images: string[]): Promise<string> {
   });
 }
 
-// ROBUST BLUR: Uses downscaling/upscaling to create a blur effect.
-// Optimized to reduce pixelation by ensuring smooth interpolation.
+// ROBUST BLUR: Uses a Gaussian blur filter for a subtle focus slip.
 function applyRegionBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-    const ix = Math.floor(x);
-    const iy = Math.floor(y);
-    const iw = Math.floor(w);
-    const ih = Math.floor(h);
+    if (w < 1 || h < 1) return;
 
-    if (iw < 1 || ih < 1) return;
+    // Create a temporary canvas to hold the region
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = w;
+    tempCanvas.height = h;
+    const tCtx = tempCanvas.getContext('2d');
+    if (!tCtx) return;
 
-    // 1. Downscale - Adjusted to 0.25 to prevent extreme pixelation while still blurring
-    // Too small (0.1) = pixelated blocks. Too big (0.5) = not enough blur.
-    const scale = 0.25; 
-    const sw = Math.max(2, Math.floor(iw * scale));
-    const sh = Math.max(2, Math.floor(ih * scale));
+    // Draw the source region into the temp canvas
+    tCtx.drawImage(ctx.canvas, x, y, w, h, 0, 0, w, h);
 
-    const smallCanvas = document.createElement('canvas');
-    smallCanvas.width = sw;
-    smallCanvas.height = sh;
-    const sCtx = smallCanvas.getContext('2d');
-    if (!sCtx) return;
-    
-    // Ensure smoothing is ON for the downsample
-    sCtx.imageSmoothingEnabled = true;
-    sCtx.imageSmoothingQuality = 'medium';
-    sCtx.drawImage(ctx.canvas, ix, iy, iw, ih, 0, 0, sw, sh);
-
-    // 2. Draw back scaled up
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(ix, iy, iw, ih);
-    ctx.clip(); 
-
-    // CRITICAL: Force high-quality smoothing for the upscale to blend the blocks
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-
-    // Draw scaled up
-    ctx.drawImage(smallCanvas, 0, 0, sw, sh, ix, iy, iw, ih);
     
+    // Subtle blur radius.
+    // 0.6% of width simulates a slight lens slip/missed focus.
+    const blurRadius = Math.max(3, Math.floor(w * 0.006)); 
+    ctx.filter = `blur(${blurRadius}px)`;
+
+    // Clip to ensure blur doesn't bleed outside the quadrant too much
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+
+    // Draw the temp canvas back onto the main canvas
+    ctx.drawImage(tempCanvas, x, y, w, h);
+
     ctx.restore();
 }
 
-// ROBUST GRAYSCALE: Manipulates pixels directly.
-// Ensures B&W works even if ctx.filter is ignored by the browser.
+// ROBUST GRAYSCALE
 function applyRobustGrayscaleAndContrast(ctx: CanvasRenderingContext2D, width: number, height: number, contrast: number = 1.0) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
     
     for (let i = 0; i < data.length; i += 4) {
-        // Luminosity method for natural grayscale
         let avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-        
-        // Apply Contrast
-        // Formula approximation: val = (val - 128) * contrast + 128
         if (contrast !== 1.0) {
             avg = (avg - 128) * contrast + 128;
             if (avg < 0) avg = 0;
             if (avg > 255) avg = 255;
         }
-
-        data[i] = avg;     // R
-        data[i + 1] = avg; // G
-        data[i + 2] = avg; // B
-        // Alpha unchanged
+        data[i] = avg;     
+        data[i + 1] = avg; 
+        data[i + 2] = avg; 
     }
     ctx.putImageData(imageData, 0, 0);
 }
@@ -173,11 +146,9 @@ export async function processImageNatural(base64Image: string, filterType: Filte
     img.crossOrigin = "Anonymous";
     img.onload = () => {
       try {
-        // SAFETY: Downscale large images
-        // Reduced to 1600 for better mobile memory stability
         let targetWidth = img.width;
         let targetHeight = img.height;
-        const MAX_WIDTH = 1600; 
+        const MAX_WIDTH = 3200; 
 
         if (targetWidth > MAX_WIDTH) {
             const scale = MAX_WIDTH / targetWidth;
@@ -186,7 +157,6 @@ export async function processImageNatural(base64Image: string, filterType: Filte
         }
 
         const canvas = document.createElement('canvas');
-        // Removed { willReadFrequently: true } to avoid interfering with GPU operations on mobile
         const ctx = canvas.getContext('2d');
         
         if (!ctx) {
@@ -197,19 +167,13 @@ export async function processImageNatural(base64Image: string, filterType: Filte
         canvas.width = targetWidth;
         canvas.height = targetHeight;
         
-        // Ensure smoothing is enabled globally
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
         // --- STEP 1: BASE RENDER ---
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
-        // --- CALC GEOMETRY (Percentage Based to fix Shaking) ---
-        // Width = 2.12 units.
-        // Size = 1.0 unit.
-        // Padding = 0.05 unit.
-        // Gap = 0.02 unit.
-        
+        // --- CALC GEOMETRY ---
         const S = canvas.width / 2.12; 
         const uP = S * 0.05;
         const uG = S * 0.02;
@@ -222,18 +186,14 @@ export async function processImageNatural(base64Image: string, filterType: Filte
         ];
 
         // --- STEP 1.5: RANDOM REGION BLUR ---
-        // We use the Robust Downscale method now.
+        // Subtly blur 2 random quadrants (simulate focus slip)
         const indices = [0, 1, 2, 3].sort(() => 0.5 - Math.random()).slice(0, 2);
-        
         indices.forEach(idx => {
             const q = quadrants[idx];
             applyRegionBlur(ctx, q.x, q.y, q.w, q.h);
         });
 
-        // --- STEP 2: APPLY FILTER LOOK (Color / Initial Grading) ---
-        // We try to use ctx.filter for color grading. 
-        // If it fails on mobile, the B&W step later will still save the day for Mono.
-        
+        // --- STEP 2: APPLY FILTER LOOK ---
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
@@ -247,7 +207,6 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             let overlayColor: string | null = null;
             let overlayMode: GlobalCompositeOperation = 'source-over';
 
-            // Filter Configuration
             if (filterType === 'HIPPO_400') {
                 ctx.filter = 'contrast(1.08) saturate(1.15) brightness(1.02)';
                 overlayMode = 'screen';
@@ -259,24 +218,19 @@ export async function processImageNatural(base64Image: string, filterType: Filte
                 overlayColor = 'rgba(255, 200, 150, 0.08)'; 
 
             } else if (filterType === 'WILLIAM_400') {
-                // Initial contrast prep
                 ctx.filter = 'contrast(1.1) brightness(1.0)';
                 overlayColor = null;
 
             } else if (filterType === 'WILLIAM_H') {
-                // Initial contrast prep
                 ctx.filter = 'contrast(1.2) brightness(1.1)';
                 overlayColor = null;
             } else {
                 ctx.filter = 'none';
             }
 
-            // Execute Filtered Draw
             ctx.drawImage(tempCanvas, 0, 0);
-            
             ctx.filter = 'none';
 
-            // Apply Tint/Overlay
             if (overlayColor) {
                 ctx.globalCompositeOperation = overlayMode;
                 ctx.fillStyle = overlayColor;
@@ -328,35 +282,27 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             }
         }
 
-        // --- STEP 4: GLOW (Optional) ---
-        // We skip Glow for WILLIAM_H to keep it sharp.
-        // For others, we try it. 
+        // --- STEP 4: GLOW ---
         if (filterType !== 'WILLIAM_H') {
             const glowCanvas = document.createElement('canvas');
-            glowCanvas.width = canvas.width / 4; // Smaller for more blur + performance
+            glowCanvas.width = canvas.width / 4; 
             glowCanvas.height = canvas.height / 4;
             const gCtx = glowCanvas.getContext('2d');
             if (gCtx) {
-                // We just draw scaled down, no filter needed for "glowy" look when scaled up
                 gCtx.drawImage(canvas, 0, 0, glowCanvas.width, glowCanvas.height);
-                
                 ctx.save();
                 ctx.globalCompositeOperation = 'screen';
                 ctx.globalAlpha = 0.25; 
-                // Draw scaled up for soft glow
                 ctx.drawImage(glowCanvas, 0, 0, canvas.width, canvas.height);
                 ctx.restore();
             }
         }
 
         // --- STEP 5: ROBUST B&W ENFORCEMENT ---
-        // This is the critical fix for "Black and white is still color".
-        // We use pixel manipulation to guarantee the result.
-        
         if (filterType === 'WILLIAM_400') {
             applyRobustGrayscaleAndContrast(ctx, canvas.width, canvas.height, 1.0);
         } else if (filterType === 'WILLIAM_H') {
-            applyRobustGrayscaleAndContrast(ctx, canvas.width, canvas.height, 1.25); // Higher contrast
+            applyRobustGrayscaleAndContrast(ctx, canvas.width, canvas.height, 1.25); 
         }
 
         // --- STEP 6: EXTRACT FRAMES ---
@@ -374,23 +320,21 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             tempC.height = h;
             const tempCtx = tempC.getContext('2d');
             if (tempCtx) {
-                // Smoothing for extraction as well
                 tempCtx.imageSmoothingEnabled = true;
                 tempCtx.imageSmoothingQuality = 'high';
 
                 tempCtx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
                 
-                // Double Safety for extraction on mobile
                 if (isBW) {
                      applyRobustGrayscaleAndContrast(tempCtx, w, h, 1.0);
                 }
 
-                processedFrames.push(tempC.toDataURL('image/webp', 0.85));
+                processedFrames.push(tempC.toDataURL('image/webp', 0.98));
             }
         }
 
         resolve({
-            combinedUrl: canvas.toDataURL('image/webp', 0.90),
+            combinedUrl: canvas.toDataURL('image/jpeg', 0.98),
             frames: processedFrames
         });
       } catch (e) {
@@ -400,4 +344,185 @@ export async function processImageNatural(base64Image: string, filterType: Filte
     img.onerror = (e) => reject(e);
     img.src = base64Image;
   });
+}
+
+// CONSTANTS FOR POSTER GEOMETRY (Shared with Motion Generator)
+// DESIGN: Dark Swiss Editorial
+// Image is pushed down to make room for massive typography.
+const POSTER_WIDTH = 2400;
+const POSTER_HEIGHT = 3600;
+const POSTER_MARGIN = 140; 
+const IMG_Y = 960; 
+const IMG_SIZE = 2120; // 2400 - (140 * 2)
+
+export async function createPoster(
+    imageUrl: string, 
+    locationName: string, 
+    dateString: string, 
+    filterName: string,
+    coordinates: string = ""
+): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = POSTER_WIDTH;
+            canvas.height = POSTER_HEIGHT;
+            const ctx = canvas.getContext('2d');
+            
+            if (!ctx) {
+                reject(new Error("No context"));
+                return;
+            }
+
+            // 1. Background (Dark Swiss - Deep Black)
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Header Typography (Editorial)
+            // Top Left: Coordinates / Label
+            ctx.fillStyle = '#666';
+            ctx.font = '500 60px "DM Sans", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText('HIPPOCAM // OPTICAL', POSTER_MARGIN, 150);
+
+            // Top Right: Date
+            ctx.textAlign = 'right';
+            ctx.fillText(dateString.toUpperCase(), POSTER_WIDTH - POSTER_MARGIN, 150);
+
+            // Massive Location Title
+            const cleanLoc = locationName.toUpperCase().split(',')[0];
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#EAEAEA';
+            
+            // Dynamic sizing for title
+            let titleSize = 350;
+            ctx.font = `bold ${titleSize}px "DM Sans", sans-serif`;
+            while (ctx.measureText(cleanLoc).width > (POSTER_WIDTH - POSTER_MARGIN * 2) && titleSize > 120) {
+                titleSize -= 20;
+                ctx.font = `bold ${titleSize}px "DM Sans", sans-serif`;
+            }
+            
+            // Draw Title baseline just above image
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText(cleanLoc, POSTER_MARGIN, IMG_Y - 60);
+
+            // 3. Image (Middle)
+            ctx.drawImage(img, POSTER_MARGIN, IMG_Y, IMG_SIZE, IMG_SIZE);
+
+            // 4. Footer / Technical Grid
+            const FOOTER_START_Y = IMG_Y + IMG_SIZE + 120;
+            
+            // Divider Line
+            ctx.fillStyle = '#333';
+            ctx.fillRect(POSTER_MARGIN, FOOTER_START_Y, POSTER_WIDTH - (POSTER_MARGIN * 2), 4);
+
+            const INFO_Y = FOOTER_START_Y + 100;
+            ctx.textBaseline = 'top';
+            
+            // Column 1: Filter
+            ctx.font = 'bold 80px "DM Sans", sans-serif';
+            ctx.fillStyle = '#FFF';
+            ctx.textAlign = 'left';
+            ctx.fillText(filterName.toUpperCase(), POSTER_MARGIN, INFO_Y);
+            
+            ctx.font = '500 50px "DM Sans", sans-serif';
+            ctx.fillStyle = '#666';
+            ctx.fillText('EMULSION PROCESS', POSTER_MARGIN, INFO_Y + 100);
+
+            // Column 2: Coords (Right Aligned)
+            ctx.textAlign = 'right';
+            ctx.font = 'bold 80px "DM Sans", sans-serif';
+            ctx.fillStyle = '#FFF';
+            ctx.fillText(coordinates || 'NO DATA', POSTER_WIDTH - POSTER_MARGIN, INFO_Y);
+            
+            ctx.font = '500 50px "DM Sans", sans-serif';
+            ctx.fillStyle = '#666';
+            ctx.fillText('GEOLOCATION', POSTER_WIDTH - POSTER_MARGIN, INFO_Y + 100);
+
+            resolve(canvas.toDataURL('image/jpeg', 0.95));
+        };
+        img.onerror = (e) => reject(e);
+        img.src = imageUrl;
+    });
+}
+
+// GENERATE ANIMATED POSTER BLOB (WebM)
+export async function createMotionPoster(posterUrl: string, frames: string[]): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+        const posterImg = new Image();
+        posterImg.crossOrigin = "Anonymous";
+        
+        posterImg.onload = async () => {
+             // Prepare Frames
+             const loadedFrames = await Promise.all(frames.map(src => {
+                 return new Promise<HTMLImageElement>((r, e) => {
+                     const i = new Image();
+                     i.crossOrigin = "Anonymous";
+                     i.onload = () => r(i);
+                     i.onerror = e;
+                     i.src = src;
+                 });
+             }));
+
+             const canvas = document.createElement('canvas');
+             canvas.width = POSTER_WIDTH;
+             canvas.height = POSTER_HEIGHT;
+             const ctx = canvas.getContext('2d');
+             if(!ctx) return reject("No ctx");
+
+             // Setup MediaRecorder
+             const stream = canvas.captureStream(30); // 30 FPS
+             const recorder = new MediaRecorder(stream, {
+                 mimeType: 'video/webm;codecs=vp9',
+                 videoBitsPerSecond: 5000000 // 5 Mbps
+             });
+
+             const chunks: Blob[] = [];
+             recorder.ondataavailable = (e) => {
+                 if (e.data.size > 0) chunks.push(e.data);
+             };
+             recorder.onstop = () => {
+                 const blob = new Blob(chunks, { type: 'video/webm' });
+                 resolve(blob);
+             };
+
+             recorder.start();
+
+             // ANIMATION LOOP
+             const FRAME_DURATION = 150; // ms
+             const TOTAL_LOOPS = 4;
+             
+             let loopCount = 0;
+             let frameIdx = 0;
+
+             const draw = () => {
+                 // 1. Draw Poster Base
+                 ctx.drawImage(posterImg, 0, 0);
+                 
+                 // 2. Draw Current Frame in the Image Slot
+                 // NOTE: Must match geometry in createPoster
+                 ctx.drawImage(loadedFrames[frameIdx], POSTER_MARGIN, IMG_Y, IMG_SIZE, IMG_SIZE);
+
+                 // Advance
+                 frameIdx++;
+                 if (frameIdx >= loadedFrames.length) {
+                     frameIdx = 0;
+                     loopCount++;
+                 }
+
+                 if (loopCount < TOTAL_LOOPS) {
+                     setTimeout(draw, FRAME_DURATION); 
+                 } else {
+                     recorder.stop();
+                 }
+             };
+
+             draw();
+        };
+        posterImg.onerror = reject;
+        posterImg.src = posterUrl;
+    });
 }

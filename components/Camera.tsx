@@ -2,16 +2,15 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Photo, FilterType } from '../types';
 import { stitchBurst } from '../services/geminiService';
-import { Loader2, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 interface CameraProps {
   onCapture: (photo: Photo) => void;
   onOpenGallery: () => void;
-  onBack: () => void;
   lastPhotoThumbnail?: string;
 }
 
-export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, onBack, lastPhotoThumbnail }) => {
+export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, lastPhotoThumbnail }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -19,13 +18,10 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
   const [isTakingPhoto, setIsTakingPhoto] = useState(false);
   const [burstCount, setBurstCount] = useState(0); 
   const [error, setError] = useState<string | null>(null);
-  
-  // New Filter State
   const [activeFilter, setActiveFilter] = useState<FilterType>('HIPPO_400');
-  
-  // State for location
   const [coordsText, setCoordsText] = useState<string>("00.00°N, 00.00°W");
   const [locationName, setLocationName] = useState<string>("LOCATING...");
+  const [justCaptured, setJustCaptured] = useState(false);
 
   const startCamera = useCallback(async () => {
     try {
@@ -104,6 +100,15 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
     };
   }, [facingMode]);
 
+  // Flash effect when thumbnail updates (indicating successful save)
+  useEffect(() => {
+      if (lastPhotoThumbnail) {
+          setJustCaptured(true);
+          const t = setTimeout(() => setJustCaptured(false), 1000);
+          return () => clearTimeout(t);
+      }
+  }, [lastPhotoThumbnail]);
+
   const toggleCamera = () => {
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
   };
@@ -130,14 +135,12 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
 
   const captureFrame = async (): Promise<string | null> => {
     if (!videoRef.current || !canvasRef.current) return null;
-    
     const video = videoRef.current;
     const canvas = canvasRef.current;
     
     const minDim = Math.min(video.videoWidth, video.videoHeight);
     const startX = (video.videoWidth - minDim) / 2;
     const startY = (video.videoHeight - minDim) / 2;
-
     const MAX_CAPTURE_SIZE = 1080;
     const finalDim = Math.min(minDim, MAX_CAPTURE_SIZE);
 
@@ -152,9 +155,7 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
       ctx.scale(-1, 1);
     }
 
-    // Capture RAW color (we apply filter in development)
     ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, finalDim, finalDim);
-
     return canvas.toDataURL('image/jpeg', 0.85);
   };
 
@@ -165,8 +166,6 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
     const shots: string[] = [];
     const BURST_SIZE = 4;
     const DELAY_MS = 100; 
-    
-    // Lock in the filter at moment of capture
     const captureFilter = activeFilter;
 
     try {
@@ -181,9 +180,7 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
       }
 
       if (shots.length === BURST_SIZE) {
-         // Stitch frames into grid
          const stitchedUrl = await stitchBurst(shots);
-         
          const newPhoto: Photo = {
             id: crypto.randomUUID(),
             originalUrl: stitchedUrl,
@@ -192,11 +189,10 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
             status: 'pending',
             locationName: locationName,
             coordinates: coordsText,
-            filter: captureFilter // Store selected filter
+            filter: captureFilter 
           };
           onCapture(newPhoto);
       }
-
     } catch (e) {
         console.error("Burst failed", e);
         setError("ERR");
@@ -209,27 +205,15 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
   return (
     <div className="relative h-full w-full bg-[#050505] flex flex-col text-white font-mono">
       
-      {/* Top HUD */}
-      <div className="h-16 flex items-end justify-between px-4 pb-3 z-10 border-b border-neutral-900 bg-[#050505]">
-         <div className="flex items-center gap-4">
-             <button onClick={onBack} className="text-white hover:text-neutral-400">
-                <ArrowLeft size={18} />
-             </button>
-             <div className="flex flex-col">
-                <span className="text-[9px] uppercase tracking-widest text-neutral-500">Stock</span>
-                <span className="text-xs text-white font-bold">{getFilterName(activeFilter)}</span>
-             </div>
-         </div>
-         <div className="flex flex-col items-end">
-            <span className="text-[9px] uppercase tracking-widest text-neutral-500">Current</span>
-            <span className="text-xs text-white font-bold">{locationName.length > 15 ? locationName.slice(0, 15) + '..' : locationName}</span>
-         </div>
+      {/* Top HUD (Minimal) */}
+      <div className="h-16 flex items-center justify-center z-10 bg-[#050505] border-b border-neutral-900">
+         <span className="text-[10px] uppercase tracking-[0.3em] font-bold text-neutral-500">
+             Ready
+         </span>
       </div>
 
-      {/* Main Viewport Stage */}
+      {/* Viewport */}
       <div className="flex-1 flex flex-col items-center justify-center bg-[#111] relative overflow-hidden">
-        
-        {/* The Square Viewfinder */}
         <div className="relative w-full max-w-md aspect-square bg-black overflow-hidden border-x border-neutral-800">
             <video
                 ref={videoRef}
@@ -239,7 +223,6 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
                 className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
                 style={{ filter: getFilterStyle(activeFilter) }}
             />
-            
             {error && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/80">
                     <span className="text-red-500 font-bold border border-red-500 px-4 py-2 text-xs tracking-widest animate-pulse">
@@ -247,33 +230,21 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
                     </span>
                 </div>
             )}
-
-            {/* Flash Overlay */}
-            <div id="camera-flash" className="absolute inset-0 bg-white opacity-0 transition-opacity duration-75 pointer-events-none mix-blend-overlay z-20" />
-            
-            {/* HUD Overlay */}
             <div className="absolute inset-0 pointer-events-none p-4 flex flex-col justify-between">
-                {/* Top Corners */}
                 <div className="flex justify-between">
                     <div className="w-4 h-4 border-l-2 border-t-2 border-white/50" />
                     <div className="w-4 h-4 border-r-2 border-t-2 border-white/50" />
                 </div>
-                
-                {/* Center Crosshair */}
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center opacity-50">
                     <div className="w-full h-[1px] bg-red-500" />
                     <div className="h-full w-[1px] bg-red-500 absolute" />
                 </div>
-
-                {/* Bottom Corners */}
                 <div className="flex justify-between items-end">
                     <div className="w-4 h-4 border-l-2 border-b-2 border-white/50" />
                     <div className="text-[9px] text-white/70 tracking-widest">{coordsText}</div>
                     <div className="w-4 h-4 border-r-2 border-b-2 border-white/50" />
                 </div>
             </div>
-
-            {/* Burst Counter Big */}
             {burstCount > 0 && (
                 <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/20 backdrop-blur-sm">
                     <div className="text-9xl font-black text-white italic tracking-tighter">
@@ -286,8 +257,6 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
 
       {/* Control Deck */}
       <div className="h-44 bg-[#050505] border-t border-neutral-900 px-6 pb-6 pt-2 flex flex-col gap-4">
-         
-         {/* Filter Toggles */}
          <div className="flex justify-between w-full max-w-sm mx-auto pt-2 gap-1">
              {(['HIPPO_400', 'HIPPO_800', 'WILLIAM_400', 'WILLIAM_H'] as FilterType[]).map(f => (
                  <button
@@ -300,18 +269,17 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
              ))}
          </div>
 
-         {/* Shutter Row */}
          <div className="flex items-center justify-between mt-2">
-            {/* Gallery Access */}
-            <button onClick={onOpenGallery} className="w-12 h-12 flex items-center justify-center border border-neutral-800 hover:border-neutral-600 transition-colors bg-neutral-900">
+            <button 
+                onClick={onOpenGallery} 
+                className={`w-12 h-12 flex items-center justify-center border transition-all duration-300 bg-neutral-900 ${justCaptured ? 'border-white bg-neutral-800 scale-110' : 'border-neutral-800 hover:border-neutral-600'}`}
+            >
                 {lastPhotoThumbnail ? (
                     <img src={lastPhotoThumbnail} className="w-full h-full object-cover" />
                 ) : (
                     <div className="w-2 h-2 bg-neutral-700 rounded-full" />
                 )}
             </button>
-
-            {/* Shutter Button */}
             <button
                 onClick={takeBurst}
                 disabled={isTakingPhoto}
@@ -319,8 +287,6 @@ export const CameraView: React.FC<CameraProps> = ({ onCapture, onOpenGallery, on
             >
                 <div className={`w-16 h-16 rounded-full transition-colors ${isTakingPhoto ? 'bg-red-600' : 'bg-white group-hover:bg-neutral-200'}`} />
             </button>
-
-            {/* Flip Cam */}
             <button onClick={toggleCamera} className="w-12 h-12 flex items-center justify-center border border-neutral-800 hover:border-neutral-600 transition-colors text-xs font-bold text-neutral-400 hover:text-white">
                 FLIP
             </button>

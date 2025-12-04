@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
 import { Photo } from '../types';
-import { ArrowLeft, EyeOff, Trash2, Check, Settings2 } from 'lucide-react';
+import { ArrowLeft, EyeOff, Trash2, Check, Settings2, Camera } from 'lucide-react';
 
 interface GalleryProps {
   photos: Photo[];
@@ -47,14 +48,14 @@ export const Gallery: React.FC<GalleryProps> = ({ photos, onSelect, onBack, onDe
   return (
     <div className="h-full w-full bg-[#050505] flex flex-col text-white">
       {/* Swiss Header */}
-      <div className="pt-12 pb-6 px-6 border-b border-neutral-900 flex flex-col gap-4">
+      <div className="pt-12 pb-6 px-6 border-b border-neutral-900 flex flex-col gap-4 bg-[#050505] z-10 sticky top-0">
         <div className="flex items-center justify-between">
             <button 
                 onClick={onBack} 
                 className="self-start text-[10px] uppercase tracking-[0.3em] hover:text-neutral-400 transition-colors flex items-center gap-2"
             >
-                <ArrowLeft size={12} />
-                Camera
+                <Camera size={12} />
+                Return
             </button>
             <button 
                 onClick={() => setIsManaging(!isManaging)} 
@@ -66,22 +67,22 @@ export const Gallery: React.FC<GalleryProps> = ({ photos, onSelect, onBack, onDe
                     </>
                 ) : (
                     <>
-                        <Settings2 size={12} /> Manage
+                        <Settings2 size={12} /> Select
                     </>
                 )}
             </button>
         </div>
         <div className="flex items-baseline justify-between">
-            <h1 className="text-5xl font-black tracking-tighter uppercase leading-none">
-            Archive
+            <h1 className="text-4xl font-black tracking-tighter uppercase leading-none">
+            Gallery
             </h1>
             <span className="text-xl font-light text-neutral-600">({photos.length})</span>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto scrollbar-hide">
         {photos.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-neutral-800 gap-4">
+          <div className="h-full flex flex-col items-center justify-center text-neutral-800 gap-4 min-h-[50vh]">
             <span className="text-9xl font-black opacity-10">00</span>
             <p className="text-xs tracking-[0.2em] uppercase">No exposures found</p>
           </div>
@@ -108,9 +109,6 @@ export const Gallery: React.FC<GalleryProps> = ({ photos, onSelect, onBack, onDe
                         <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                             <EyeOff className="text-white/50" size={16} />
                         </div>
-                    )}
-                    {photo.processedUrl && !isManaging && (
-                        <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.5)] opacity-0 group-hover:opacity-100 transition-opacity" />
                     )}
                 </button>
 
