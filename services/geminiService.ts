@@ -12,6 +12,8 @@ async function resizeImage(img: HTMLImageElement, maxWidth: number): Promise<HTM
     canvas.height = img.height * scale;
     const ctx = canvas.getContext('2d');
     if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     }
     return canvas;
@@ -97,7 +99,7 @@ export async function stitchBurst(images: string[]): Promise<string> {
 }
 
 // ROBUST BLUR: Uses downscaling/upscaling to create a blur effect.
-// This works on ALL browsers/devices, whereas ctx.filter('blur') can fail on some mobile webviews.
+// Optimized to reduce pixelation by ensuring smooth interpolation.
 function applyRegionBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
     const ix = Math.floor(x);
     const iy = Math.floor(y);
@@ -106,8 +108,9 @@ function applyRegionBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w:
 
     if (iw < 1 || ih < 1) return;
 
-    // 1. Downscale significantly (smaller = blurrier when scaled up)
-    const scale = 0.15; // 15% original size
+    // 1. Downscale - Adjusted to 0.25 to prevent extreme pixelation while still blurring
+    // Too small (0.1) = pixelated blocks. Too big (0.5) = not enough blur.
+    const scale = 0.25; 
     const sw = Math.max(2, Math.floor(iw * scale));
     const sh = Math.max(2, Math.floor(ih * scale));
 
@@ -117,7 +120,9 @@ function applyRegionBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w:
     const sCtx = smallCanvas.getContext('2d');
     if (!sCtx) return;
     
-    // Draw source region into small canvas (Resampling creates blur)
+    // Ensure smoothing is ON for the downsample
+    sCtx.imageSmoothingEnabled = true;
+    sCtx.imageSmoothingQuality = 'medium';
     sCtx.drawImage(ctx.canvas, ix, iy, iw, ih, 0, 0, sw, sh);
 
     // 2. Draw back scaled up
@@ -126,7 +131,11 @@ function applyRegionBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w:
     ctx.rect(ix, iy, iw, ih);
     ctx.clip(); 
 
-    // Draw scaled up (Browser's bicubic interpolation creates the smooth blur)
+    // CRITICAL: Force high-quality smoothing for the upscale to blend the blocks
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // Draw scaled up
     ctx.drawImage(smallCanvas, 0, 0, sw, sh, ix, iy, iw, ih);
     
     ctx.restore();
@@ -187,6 +196,10 @@ export async function processImageNatural(base64Image: string, filterType: Filte
 
         canvas.width = targetWidth;
         canvas.height = targetHeight;
+        
+        // Ensure smoothing is enabled globally
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
 
         // --- STEP 1: BASE RENDER ---
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
@@ -361,6 +374,10 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             tempC.height = h;
             const tempCtx = tempC.getContext('2d');
             if (tempCtx) {
+                // Smoothing for extraction as well
+                tempCtx.imageSmoothingEnabled = true;
+                tempCtx.imageSmoothingQuality = 'high';
+
                 tempCtx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
                 
                 // Double Safety for extraction on mobile
