@@ -96,38 +96,66 @@ export async function stitchBurst(images: string[]): Promise<string> {
   });
 }
 
-// Helper to apply static blur to a specific region without moving pixels (no shaking)
+// ROBUST BLUR: Uses downscaling/upscaling to create a blur effect.
+// This works on ALL browsers/devices, whereas ctx.filter('blur') can fail on some mobile webviews.
 function applyRegionBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-    // 1. Copy the region to a temp canvas
-    // ROUNDING is crucial here. If we draw at 0.5px, it will blur/shift the pixels.
     const ix = Math.floor(x);
     const iy = Math.floor(y);
     const iw = Math.floor(w);
     const ih = Math.floor(h);
 
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = iw;
-    tempCanvas.height = ih;
-    const tCtx = tempCanvas.getContext('2d');
-    if (!tCtx) return;
-    
-    tCtx.drawImage(ctx.canvas, ix, iy, iw, ih, 0, 0, iw, ih);
+    if (iw < 1 || ih < 1) return;
 
-    // 2. Draw it back onto the main canvas with a blur filter
+    // 1. Downscale significantly (smaller = blurrier when scaled up)
+    const scale = 0.15; // 15% original size
+    const sw = Math.max(2, Math.floor(iw * scale));
+    const sh = Math.max(2, Math.floor(ih * scale));
+
+    const smallCanvas = document.createElement('canvas');
+    smallCanvas.width = sw;
+    smallCanvas.height = sh;
+    const sCtx = smallCanvas.getContext('2d');
+    if (!sCtx) return;
+    
+    // Draw source region into small canvas (Resampling creates blur)
+    sCtx.drawImage(ctx.canvas, ix, iy, iw, ih, 0, 0, sw, sh);
+
+    // 2. Draw back scaled up
     ctx.save();
     ctx.beginPath();
     ctx.rect(ix, iy, iw, ih);
-    ctx.clip(); // Ensure we don't effect neighboring pixels too much
+    ctx.clip(); 
 
-    // REDUCED BLUR: Range 2 to 4.5px (Original was 3-6)
-    const blurAmount = 2 + Math.random() * 2.5;
-    ctx.filter = `blur(${blurAmount}px)`;
-    
-    // Draw exactly at same coordinates - NO SHIFT/SHAKE
-    // We draw the tempCanvas (which is the captured region) back into the main canvas at x, y
-    ctx.drawImage(tempCanvas, 0, 0, iw, ih, ix, iy, iw, ih);
+    // Draw scaled up (Browser's bicubic interpolation creates the smooth blur)
+    ctx.drawImage(smallCanvas, 0, 0, sw, sh, ix, iy, iw, ih);
     
     ctx.restore();
+}
+
+// ROBUST GRAYSCALE: Manipulates pixels directly.
+// Ensures B&W works even if ctx.filter is ignored by the browser.
+function applyRobustGrayscaleAndContrast(ctx: CanvasRenderingContext2D, width: number, height: number, contrast: number = 1.0) {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+    
+    for (let i = 0; i < data.length; i += 4) {
+        // Luminosity method for natural grayscale
+        let avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+        
+        // Apply Contrast
+        // Formula approximation: val = (val - 128) * contrast + 128
+        if (contrast !== 1.0) {
+            avg = (avg - 128) * contrast + 128;
+            if (avg < 0) avg = 0;
+            if (avg > 255) avg = 255;
+        }
+
+        data[i] = avg;     // R
+        data[i + 1] = avg; // G
+        data[i + 2] = avg; // B
+        // Alpha unchanged
+    }
+    ctx.putImageData(imageData, 0, 0);
 }
 
 export async function processImageNatural(base64Image: string, filterType: FilterType = 'HIPPO_400'): Promise<{ combinedUrl: string, frames: string[] }> {
@@ -137,9 +165,10 @@ export async function processImageNatural(base64Image: string, filterType: Filte
     img.onload = () => {
       try {
         // SAFETY: Downscale large images
+        // Reduced to 1600 for better mobile memory stability
         let targetWidth = img.width;
         let targetHeight = img.height;
-        const MAX_WIDTH = 2000;
+        const MAX_WIDTH = 1600; 
 
         if (targetWidth > MAX_WIDTH) {
             const scale = MAX_WIDTH / targetWidth;
@@ -148,7 +177,8 @@ export async function processImageNatural(base64Image: string, filterType: Filte
         }
 
         const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        // Removed { willReadFrequently: true } to avoid interfering with GPU operations on mobile
+        const ctx = canvas.getContext('2d');
         
         if (!ctx) {
           reject(new Error("Could not get canvas context"));
@@ -166,13 +196,11 @@ export async function processImageNatural(base64Image: string, filterType: Filte
         // Size = 1.0 unit.
         // Padding = 0.05 unit.
         // Gap = 0.02 unit.
-        // S_px = Width / 2.12
         
         const S = canvas.width / 2.12; 
         const uP = S * 0.05;
         const uG = S * 0.02;
         
-        // We calculate these as floats, but will FLOOR them during extraction/blur
         const quadrants = [
             { x: uP, y: uP, w: S, h: S }, // Top Left
             { x: uP + S + uG, y: uP, w: S, h: S }, // Top Right
@@ -180,9 +208,8 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             { x: uP + S + uG, y: uP + S + uG, w: S, h: S } // Bottom Right
         ];
 
-        // --- STEP 1.5: RANDOM REGION BLUR (No Shake) ---
-        // We want to blur 2 random photos out of the 4 to create depth/focus shift in GIF.
-        // Pick 2 distinct random indices to apply blur to
+        // --- STEP 1.5: RANDOM REGION BLUR ---
+        // We use the Robust Downscale method now.
         const indices = [0, 1, 2, 3].sort(() => 0.5 - Math.random()).slice(0, 2);
         
         indices.forEach(idx => {
@@ -190,9 +217,9 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             applyRegionBlur(ctx, q.x, q.y, q.w, q.h);
         });
 
-
-        // --- STEP 2: APPLY FILTER LOOK ---
-        // We take the current state (with blurs) and apply color grading.
+        // --- STEP 2: APPLY FILTER LOOK (Color / Initial Grading) ---
+        // We try to use ctx.filter for color grading. 
+        // If it fails on mobile, the B&W step later will still save the day for Mono.
         
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
@@ -200,10 +227,8 @@ export async function processImageNatural(base64Image: string, filterType: Filte
         const tCtx = tempCanvas.getContext('2d');
         
         if (tCtx) {
-            // Copy current state to temp
             tCtx.drawImage(canvas, 0, 0);
             
-            // Prepare main canvas for filtered draw
             ctx.save();
             ctx.globalCompositeOperation = 'source-over';
             let overlayColor: string | null = null;
@@ -211,26 +236,23 @@ export async function processImageNatural(base64Image: string, filterType: Filte
 
             // Filter Configuration
             if (filterType === 'HIPPO_400') {
-                // COLOR 1: NATURAL / RICH
                 ctx.filter = 'contrast(1.08) saturate(1.15) brightness(1.02)';
                 overlayMode = 'screen';
                 overlayColor = 'rgba(20, 30, 40, 0.05)'; 
 
             } else if (filterType === 'HIPPO_800') {
-                // COLOR 2: WARMER / HIGHER ISO FEEL
                 ctx.filter = 'contrast(1.1) saturate(1.2) brightness(1.05) sepia(0.15)';
                 overlayMode = 'overlay';
                 overlayColor = 'rgba(255, 200, 150, 0.08)'; 
 
             } else if (filterType === 'WILLIAM_400') {
-                // B&W 1: WILLIAM STANDARD MONO
-                ctx.filter = 'grayscale(100%) contrast(1.1) brightness(1.0)';
-                // No overlay color for B&W to prevent tinting
+                // Initial contrast prep
+                ctx.filter = 'contrast(1.1) brightness(1.0)';
                 overlayColor = null;
 
             } else if (filterType === 'WILLIAM_H') {
-                // B&W 2: WILLIAM HIGH CONTRAST
-                ctx.filter = 'grayscale(100%) contrast(1.45) brightness(1.1)';
+                // Initial contrast prep
+                ctx.filter = 'contrast(1.2) brightness(1.1)';
                 overlayColor = null;
             } else {
                 ctx.filter = 'none';
@@ -239,10 +261,9 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             // Execute Filtered Draw
             ctx.drawImage(tempCanvas, 0, 0);
             
-            // Reset Filter
             ctx.filter = 'none';
 
-            // Apply Tint/Overlay if needed (Only for color films)
+            // Apply Tint/Overlay
             if (overlayColor) {
                 ctx.globalCompositeOperation = overlayMode;
                 ctx.fillStyle = overlayColor;
@@ -252,7 +273,6 @@ export async function processImageNatural(base64Image: string, filterType: Filte
         }
 
         // --- STEP 3: GRAIN ---
-        // Grain can be applied to both color and B&W.
         const grainCanvas = document.createElement('canvas');
         grainCanvas.width = 128; 
         grainCanvas.height = 128;
@@ -261,7 +281,6 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             const imageData = grainCtx.createImageData(128, 128);
             const data = imageData.data;
             
-            // Grain Logic based on ISO/Type
             let grainIntensity = 30;
             let grainOpacity = 30;
 
@@ -277,7 +296,6 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             }
 
             for (let i = 0; i < data.length; i += 4) {
-                // Monochromatic grain
                 const val = 120 + Math.random() * grainIntensity; 
                 data[i] = val;     
                 data[i + 1] = val; 
@@ -297,52 +315,42 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             }
         }
 
-        // --- STEP 4: GLOW (Bloom) ---
-        // Only for color or mild B&W, disable for High Contrast B&W to keep it sharp
+        // --- STEP 4: GLOW (Optional) ---
+        // We skip Glow for WILLIAM_H to keep it sharp.
+        // For others, we try it. 
         if (filterType !== 'WILLIAM_H') {
             const glowCanvas = document.createElement('canvas');
-            glowCanvas.width = canvas.width / 2;
-            glowCanvas.height = canvas.height / 2;
+            glowCanvas.width = canvas.width / 4; // Smaller for more blur + performance
+            glowCanvas.height = canvas.height / 4;
             const gCtx = glowCanvas.getContext('2d');
             if (gCtx) {
-                gCtx.filter = 'blur(4px) brightness(1.2)';
-                gCtx.globalAlpha = 0.2; 
+                // We just draw scaled down, no filter needed for "glowy" look when scaled up
                 gCtx.drawImage(canvas, 0, 0, glowCanvas.width, glowCanvas.height);
                 
                 ctx.save();
                 ctx.globalCompositeOperation = 'screen';
+                ctx.globalAlpha = 0.25; 
+                // Draw scaled up for soft glow
                 ctx.drawImage(glowCanvas, 0, 0, canvas.width, canvas.height);
                 ctx.restore();
             }
         }
 
-        // --- STEP 5: FINAL B&W ENFORCEMENT ---
-        // We do this absolutely last to ensure NO color leaks from Glow, Overlay, or Grain.
-        const isBW = filterType.includes('WILLIAM');
+        // --- STEP 5: ROBUST B&W ENFORCEMENT ---
+        // This is the critical fix for "Black and white is still color".
+        // We use pixel manipulation to guarantee the result.
         
-        if (isBW) {
-            const postProcessSnapshot = document.createElement('canvas');
-            postProcessSnapshot.width = canvas.width;
-            postProcessSnapshot.height = canvas.height;
-            const ppCtx = postProcessSnapshot.getContext('2d');
-            
-            if (ppCtx) {
-                ppCtx.drawImage(canvas, 0, 0);
-                
-                ctx.save();
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.filter = 'grayscale(100%)'; // Hard enforce
-                ctx.drawImage(postProcessSnapshot, 0, 0);
-                ctx.restore();
-            }
+        if (filterType === 'WILLIAM_400') {
+            applyRobustGrayscaleAndContrast(ctx, canvas.width, canvas.height, 1.0);
+        } else if (filterType === 'WILLIAM_H') {
+            applyRobustGrayscaleAndContrast(ctx, canvas.width, canvas.height, 1.25); // Higher contrast
         }
 
         // --- STEP 6: EXTRACT FRAMES ---
-        // Extracting frames from the FINAL processed image
         const processedFrames: string[] = [];
+        const isBW = filterType.includes('WILLIAM');
         
         for (const q of quadrants) {
-            // FLOORING coordinates to align pixels prevents shaking in GIF
             const x = Math.floor(q.x);
             const y = Math.floor(q.y);
             const w = Math.floor(q.w);
@@ -353,11 +361,13 @@ export async function processImageNatural(base64Image: string, filterType: Filte
             tempC.height = h;
             const tempCtx = tempC.getContext('2d');
             if (tempCtx) {
-                // Safety: Re-apply grayscale here to guard against extraction quirks
-                if (isBW) {
-                    tempCtx.filter = 'grayscale(100%)';
-                }
                 tempCtx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+                
+                // Double Safety for extraction on mobile
+                if (isBW) {
+                     applyRobustGrayscaleAndContrast(tempCtx, w, h, 1.0);
+                }
+
                 processedFrames.push(tempC.toDataURL('image/webp', 0.85));
             }
         }
